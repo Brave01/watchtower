@@ -212,35 +212,38 @@
         </div>
         <div class="modal-body" style="max-height:60vh;overflow-y:auto">
           <!-- Webhook list -->
-          <div v-if="webhookList.length > 0" style="margin-bottom:16px">
-            <div v-for="wh in webhookList" :key="wh.id" class="webhook-card" style="border:1px solid var(--border-color);border-radius:8px;padding:12px;margin-bottom:8px;position:relative">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                <strong>{{ wh.name || '未命名' }}</strong>
-                <div style="display:flex;gap:6px;align-items:center">
+          <div v-if="webhookList.length > 0" style="margin-bottom:20px">
+            <h4 style="margin:0 0 12px;font-size:13px;color:var(--text-secondary)">已配置的 Webhook</h4>
+            <div v-for="wh in webhookList" :key="wh.id" class="webhook-card" style="border:1px solid var(--border-color);border-radius:8px;padding:14px;margin-bottom:8px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <strong>{{ wh.name || '未命名' }}</strong>
                   <span class="tag tag-blue">{{ wh.platform }}</span>
                   <span :class="wh.enabled!==false?'tag tag-green':'tag tag-gray'">{{ wh.enabled!==false?'启用':'禁用' }}</span>
+                </div>
+                <div style="display:flex;gap:6px">
                   <button class="btn btn-sm" @click="editWebhook(wh)">编辑</button>
                   <button class="btn btn-sm btn-danger" @click="deleteWebhook(wh)">删除</button>
                 </div>
               </div>
-              <div style="font-size:12px;color:var(--text-secondary)">
-                URL: {{ wh.url || '-' }} |
-                限流: {{ wh.rate_limit || 0 }}/分钟 {{ wh.rate_limit_per_second || 0 }}/秒
+              <div style="font-size:12px;color:var(--text-secondary);line-height:1.8">
+                <div>URL: {{ wh.url || '-' }}</div>
+                <div>限流: {{ wh.rate_limit || 0 }}/分钟 {{ wh.rate_limit_per_second || 0 }}/秒</div>
               </div>
             </div>
           </div>
-          <div v-else style="text-align:center;padding:12px 0;color:var(--text-secondary)">暂无 Webhook 配置</div>
+          <div v-else style="text-align:center;padding:20px 0;color:var(--text-secondary);font-size:13px">暂无 Webhook 配置，请添加</div>
 
           <!-- Add/Edit form -->
-          <div style="border-top:1px solid var(--border-color);padding-top:16px">
-            <h4 style="margin:0 0 12px;font-size:14px">{{ editingWebhook ? '编辑 Webhook' : '添加 Webhook' }}</h4>
+          <div style="border-top:1px solid var(--border-color);padding-top:20px">
+            <h4 style="margin:0 0 16px;font-size:14px">{{ editingWebhook ? '编辑 Webhook' : '添加 Webhook' }}</h4>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
               <div class="form-group">
                 <label class="form-label">名称</label>
                 <input class="form-input" v-model="whForm.name" placeholder="例如: 飞书告警群" />
               </div>
               <div class="form-group">
-                <label class="form-label">类型</label>
+                <label class="form-label">平台类型</label>
                 <select class="form-select" v-model="whForm.platform">
                   <option value="feishu">飞书</option>
                   <option value="dingtalk">钉钉</option>
@@ -268,29 +271,31 @@
                 <label class="form-label">@人员（open_id，多个用逗号分隔）</label>
                 <input class="form-input" v-model="whForm.mention_users" placeholder="ou_xxx1, ou_xxx2" />
               </div>
-              <div class="form-group">
-                <label class="form-checkbox-label" style="margin-top:22px">
+              <div class="form-group" style="display:flex;gap:12px">
+                <div style="flex:1">
+                  <label class="form-label">限流（每分钟）</label>
+                  <input class="form-input" v-model.number="whForm.rate_limit" type="number" placeholder="0=不限" />
+                </div>
+                <div style="flex:1">
+                  <label class="form-label">限流（每秒）</label>
+                  <input class="form-input" v-model.number="whForm.rate_limit_per_second" type="number" placeholder="0=不限" />
+                </div>
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:4px">
+                <label class="form-checkbox-label">
                   <input class="form-checkbox" type="checkbox" v-model="whForm.enabled" /> 启用
                 </label>
               </div>
-              <div class="form-group">
-                <label class="form-label">限流（每分钟）</label>
-                <input class="form-input" v-model.number="whForm.rate_limit" type="number" placeholder="0=不限" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">限流（每秒）</label>
-                <input class="form-input" v-model.number="whForm.rate_limit_per_second" type="number" placeholder="0=不限" />
-              </div>
             </div>
-            <div class="form-group" style="margin-top:12px">
+            <div class="form-group" style="margin-top:4px">
               <label class="form-label">告警模板</label>
               <textarea class="form-input" v-model="whForm.template" rows="3" placeholder="自定义告警消息模板（留空使用默认）"></textarea>
             </div>
-            <div class="form-group" style="margin-top:8px">
+            <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
               <button class="btn btn-sm" @click="testWebhookTemplate">测试模板</button>
-              <span v-if="whTestResult" style="margin-left:8px;font-size:12px;color:var(--text-secondary)">{{ whTestResult }}</span>
+              <span v-if="whTestResult" style="font-size:12px;color:var(--text-secondary)">{{ whTestResult }}</span>
             </div>
-            <div style="margin-top:12px;display:flex;gap:8px">
+            <div style="margin-top:16px;display:flex;gap:8px;align-items:center;border-top:1px solid var(--border-color);padding-top:16px">
               <button class="btn btn-primary" @click="saveWebhook">{{ editingWebhook ? '更新' : '添加' }}</button>
               <button v-if="editingWebhook" class="btn" @click="cancelEditWebhook">取消编辑</button>
             </div>
