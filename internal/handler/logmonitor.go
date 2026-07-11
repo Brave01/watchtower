@@ -472,8 +472,8 @@ func handleESConfig(deps *LogMonitorDeps) http.HandlerFunc {
 
 			// 读取已有配置以保留密码（如果前端未传）
 			if req.Password == "" {
-				existing, _ := deps.Store.GetESConfig()
-				if existing != nil {
+				existing, err := deps.Store.GetESConfig()
+				if err == nil && existing != nil && existing.Password != "" {
 					req.Password = existing.Password
 				}
 			}

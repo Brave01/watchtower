@@ -182,6 +182,51 @@ func handleHosts(deps *DashboardDeps) http.HandlerFunc {
 			hosts, _ := deps.Store.ListHosts()
 			writeJSON(w, http.StatusOK, apiResponse{Success: true, Data: hosts})
 
+		case http.MethodPut:
+			var req struct {
+				ID      string `json:"id"`
+				Name    string `json:"name"`
+				Type    string `json:"type"`
+				Port    int    `json:"port"`
+				Path    string `json:"path"`
+				Timeout int    `json:"timeout"`
+			}
+			id := r.URL.Query().Get("id")
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "无效 JSON"})
+				return
+			}
+			if id == "" {
+				id = req.ID
+			}
+			if id == "" {
+				writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "缺少 id 参数"})
+				return
+			}
+			existing, _ := deps.Store.GetRole(id)
+			if existing == nil {
+				writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "角色不存在"})
+				return
+			}
+			if req.Name != "" {
+				existing.Name = req.Name
+			}
+			if req.Type != "" {
+				existing.Type = req.Type
+			}
+			if req.Port > 0 {
+				existing.Port = req.Port
+			}
+			if req.Timeout > 0 {
+				existing.Timeout = req.Timeout
+			}
+			existing.Path = req.Path // 允许清空
+			if err := deps.Store.UpdateRole(existing); err != nil {
+				writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+				return
+			}
+			writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "角色已更新", Data: existing})
+
 		case http.MethodDelete:
 			id := r.URL.Query().Get("id")
 			if err := deps.Store.DeleteHost(id); err != nil {

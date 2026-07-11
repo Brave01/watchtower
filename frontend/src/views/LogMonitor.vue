@@ -459,10 +459,15 @@ async function openESModal() {
 
 async function saveESConfig() {
   if (!esConfig.value) return
+  // 如果密码为空，不发送密码字段（后端保留已有密码）
+  const body = { ...esConfig.value }
+  if (!body.password) {
+    delete body.password
+  }
   try {
     const resp = await api('/api/es/config', {
       method: 'POST',
-      body: JSON.stringify(esConfig.value)
+      body: JSON.stringify(body)
     })
     showToast(resp.message || '配置已保存', resp.success !== false ? 'success' : 'error')
     if (resp.success !== false) {

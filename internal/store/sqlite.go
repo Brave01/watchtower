@@ -427,6 +427,10 @@ func (s *SQLiteStore) DeleteRole(id string) error {
 	_, err := s.db.Exec("DELETE FROM roles WHERE id = ?", id)
 	return err
 }
+func (s *SQLiteStore) UpdateRole(r *Role) error {
+	_, err := s.db.Exec("UPDATE roles SET name=?, type=?, port=?, path=?, timeout=? WHERE id=?", r.Name, r.Type, r.Port, r.Path, r.Timeout, r.ID)
+	return err
+}
 func (s *SQLiteStore) ListAssignments() ([]Assignment, error) {
 	rows, err := s.db.Query("SELECT host_id, role_id, status, status_code, last_check_time, error_message, override_port, override_path, consecutive_failures FROM assignments")
 	if err != nil {

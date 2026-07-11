@@ -250,11 +250,11 @@
       </div>
     </div>
 
-    <!-- Add Role modal -->
+    <!-- Add/Edit Role modal -->
     <div v-if="showAddRoleModal" class="modal-overlay" @click.self="showAddRoleModal=false">
       <div class="modal">
         <div class="modal-header">
-          <span class="modal-title">添加角色</span>
+          <span class="modal-title">{{ editingRole ? '编辑角色' : '添加角色' }}</span>
           <button class="modal-close" @click="showAddRoleModal=false">&times;</button>
         </div>
         <div class="modal-body">
@@ -287,7 +287,7 @@
         </div>
         <div class="modal-footer">
           <button class="btn" @click="showAddRoleModal=false">取消</button>
-          <button class="btn btn-primary" @click="submitAddRole" :disabled="!roleFormName || !roleFormType">添加</button>
+          <button class="btn btn-primary" @click="submitRoleForm" :disabled="!roleFormName || !roleFormType">{{ editingRole ? '保存' : '添加' }}</button>
         </div>
       </div>
     </div>
@@ -392,7 +392,7 @@
                   <td>{{ r.type }}</td>
                   <td>{{ r.port || '-' }}</td>
                   <td>{{ hostCountByRole(r.name) }}</td>
-                  <td><button class="btn btn-sm btn-danger" @click="deleteRole(r)">删除</button></td>
+                  <td><button class="btn btn-sm" @click="editRole(r)">编辑</button> <button class="btn btn-sm btn-danger" @click="deleteRole(r)">删除</button></td>
                 </tr>
               </tbody>
             </table>
@@ -541,6 +541,7 @@ const batchHostItems = ref([{ hostname: '', ip: '', cpu: '', memory: '', disk: '
 
 // Add Role
 const showAddRoleModal = ref(false)
+const editingRole = ref(null)
 const roleFormName = ref('')
 const roleFormType = ref('')
 const roleFormPort = ref(0)
@@ -804,14 +805,27 @@ async function submitBatchHosts() {
   await loadHosts()
 }
 
-// Add Role
+// Add/Edit Role
 function openAddRoleModal() {
+  resetRoleForm()
+  showAddRoleModal.value = true
+}
+function editRole(role) {
+  editingRole.value = role
+  roleFormName.value = role.name
+  roleFormType.value = role.type
+  roleFormPort.value = role.port || 0
+  roleFormPath.value = role.path || ''
+  roleFormTimeout.value = role.timeout || 5
+  showAddRoleModal.value = true
+}
+function resetRoleForm() {
+  editingRole.value = null
   roleFormName.value = ''
   roleFormType.value = ''
   roleFormPort.value = 0
   roleFormPath.value = ''
   roleFormTimeout.value = 5
-  showAddRoleModal.value = true
 }
 
 // 根据类型设置默认端口
@@ -821,18 +835,24 @@ function onRoleTypeChange() {
     roleFormPort.value = roleTypeDefaults[roleFormType.value]
   }
 }
-async function submitAddRole() {
+async function submitRoleForm() {
   if (!roleFormName.value) { showToast('请输入角色名称', 'error'); return }
   if (!roleFormType.value) { showToast('请选择探测类型', 'error'); return }
-  await api('/api/roles', { method: 'POST', body: JSON.stringify({
+  const body = {
     name: roleFormName.value,
     type: roleFormType.value,
     port: roleFormPort.value || 0,
     path: roleFormPath.value || '',
     timeout: roleFormTimeout.value || 5,
-  }) })
+  }
+  if (editingRole.value) {
+    await api('/api/roles?id=' + encodeURIComponent(editingRole.value.id), { method: 'PUT', body: JSON.stringify(body) })
+    showToast('角色已更新', 'success')
+  } else {
+    await api('/api/roles', { method: 'POST', body: JSON.stringify(body) })
+    showToast('角色添加成功', 'success')
+  }
   showAddRoleModal.value = false
-  showToast('角色添加成功', 'success')
   await loadRoles()
 }
 

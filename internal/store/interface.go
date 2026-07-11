@@ -36,6 +36,7 @@ type Store interface {
 	ListRoles() ([]Role, error)
 	GetRole(id string) (*Role, error)
 	AddRole(r *Role) error
+	UpdateRole(r *Role) error
 	DeleteRole(id string) error
 
 	// 指派
