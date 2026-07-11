@@ -811,6 +811,7 @@ function openAddRoleModal() {
   showAddRoleModal.value = true
 }
 function editRole(role) {
+  showRoleManageModal.value = false  // 关闭角色管理弹窗，避免遮挡
   editingRole.value = role
   roleFormName.value = role.name
   roleFormType.value = role.type
@@ -848,6 +849,11 @@ async function submitRoleForm() {
   if (editingRole.value) {
     await api('/api/roles?id=' + encodeURIComponent(editingRole.value.id), { method: 'PUT', body: JSON.stringify(body) })
     showToast('角色已更新', 'success')
+    showAddRoleModal.value = false
+    // 重新打开角色管理弹窗
+    await loadRoles()
+    showRoleManageModal.value = true
+    return
   } else {
     await api('/api/roles', { method: 'POST', body: JSON.stringify(body) })
     showToast('角色添加成功', 'success')

@@ -338,10 +338,6 @@
               <input class="form-input" v-model.number="esConfig.size" type="number" placeholder="默认 100" />
             </div>
             <div class="form-group">
-              <label class="form-label">ES 查询 DSL（可选）</label>
-              <textarea class="form-input" v-model="esConfig.query" rows="3" placeholder='{"query":{"bool":{"filter":[{"range":{"@timestamp":{"gte":"now-{interval}s","lte":"now"}}}]}}}'></textarea>
-            </div>
-            <div class="form-group">
               <label class="form-checkbox-label">
                 <input class="form-checkbox" type="checkbox" v-model="esConfig.enabled" /> 启用日志轮询
               </label>
@@ -428,12 +424,14 @@ const esConfig = ref(null)
 
 let pollTimer = null
 
+const PWD_PLACEHOLDER = '__PWD_PLACEHOLDER__'
+
 async function loadESConfig() {
   try {
     const data = await api('/api/es/config')
     esStatus.value = data.status || 'disconnected'
     if (data.config) {
-      esConfig.value = { ...data.config, password: '' }
+      esConfig.value = { ...data.config, password: PWD_PLACEHOLDER }
     } else {
       esConfig.value = { address: '', username: '', password: '', index: 'logs-*', interval: 15, size: 100, query: '', enabled: false }
     }
@@ -459,9 +457,9 @@ async function openESModal() {
 
 async function saveESConfig() {
   if (!esConfig.value) return
-  // 如果密码为空，不发送密码字段（后端保留已有密码）
   const body = { ...esConfig.value }
-  if (!body.password) {
+  // 密码未改动，不发送 password 字段（后端保留已有密码）
+  if (body.password === PWD_PLACEHOLDER) {
     delete body.password
   }
   try {
