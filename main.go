@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
+	"syscall"
+	"time"
 	"watchtower/internal/auth"
 	"watchtower/internal/dashboard"
 	"watchtower/internal/handler"
@@ -17,9 +20,6 @@ import (
 	"watchtower/internal/logmonitor/webhook"
 	ws "watchtower/internal/logmonitor/ws"
 	"watchtower/internal/store"
-	"strings"
-	"syscall"
-	"time"
 
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
@@ -38,17 +38,7 @@ type ServerConfig struct {
 }
 
 type LogMonitorConfig struct {
-	Elasticsearch ElasticsearchConfig `yaml:"elasticsearch"`
 	FeishuWebhook FeishuWebhookConfig `yaml:"feishu_webhook"`
-}
-
-type ElasticsearchConfig struct {
-	Address  string                 `yaml:"address"`
-	Username string                 `yaml:"username"`
-	Index    string                 `yaml:"index"`
-	Interval int                    `yaml:"interval"`
-	Size     int                    `yaml:"size"`
-	Query    map[string]interface{} `yaml:"query"`
 }
 
 type FeishuWebhookConfig struct {
@@ -197,42 +187,8 @@ func main() {
 		log.Printf("[Main] Webhook #%d 已就绪 (%s)", clientID, client.GetConfig().Platform)
 	}
 
-	// ES 管道（从数据库配置动态启动）
+	// ES 管道（仅创建实例，由 Web UI 保存配置后动态启动）
 	esPipeline := handler.NewESPipeline(logParser, deduper, filterEngine, wsHub, whClients, defaultWhClient)
-	dbCfg, _ := st.GetESConfig()
-	if dbCfg != nil && dbCfg.Enabled && dbCfg.Address != "" {
-		// 从环境变量补充密码（如果 DB 中未保存）
-		if dbCfg.Password == "" {
-			dbCfg.Password = getEnv("ES_PASSWORD", "")
-		}
-		if err := esPipeline.Start(dbCfg); err != nil {
-			log.Printf("[Main] ES 管道启动失败: %v", err)
-		}
-	} else {
-		// 回退到 config.yaml 配置
-		esPwd := getEnv("ES_PASSWORD", "")
-		if cfg.LogMonitor.Elasticsearch.Address != "" && esPwd != "" {
-			fallbackCfg := &store.ESConfig{
-				Address:  cfg.LogMonitor.Elasticsearch.Address,
-				Username: cfg.LogMonitor.Elasticsearch.Username,
-				Password: esPwd,
-				Index:    cfg.LogMonitor.Elasticsearch.Index,
-				Interval: cfg.LogMonitor.Elasticsearch.Interval,
-				Enabled:  true,
-			}
-			if cfg.LogMonitor.Elasticsearch.Query != nil {
-				qb, _ := json.Marshal(cfg.LogMonitor.Elasticsearch.Query)
-				fallbackCfg.Query = string(qb)
-			}
-			// 保存回 DB 以便页面管理
-			st.SaveESConfig(fallbackCfg)
-			if err := esPipeline.Start(fallbackCfg); err != nil {
-				log.Printf("[Main] ES 管道启动失败: %v", err)
-			}
-		} else {
-			log.Printf("[Main] ES 未配置或 ES_PASSWORD 未设置，日志轮询已跳过")
-		}
-	}
 
 	// ========== 拨测调度器 ==========
 	interval := 15 * time.Second

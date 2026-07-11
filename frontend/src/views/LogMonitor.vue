@@ -338,6 +338,10 @@
               <input class="form-input" v-model.number="esConfig.size" type="number" placeholder="默认 100" />
             </div>
             <div class="form-group">
+              <label class="form-label">ES 查询 DSL（可选）</label>
+              <textarea class="form-input" v-model="esConfig.query" rows="3" placeholder='{"query":{"bool":{"filter":[{"range":{"@timestamp":{"gte":"now-{interval}s","lte":"now"}}}]}}}'></textarea>
+            </div>
+            <div class="form-group">
               <label class="form-checkbox-label">
                 <input class="form-checkbox" type="checkbox" v-model="esConfig.enabled" /> 启用日志轮询
               </label>
@@ -431,7 +435,7 @@ async function loadESConfig() {
     if (data.config) {
       esConfig.value = { ...data.config, password: '' }
     } else {
-      esConfig.value = { address: '', username: '', password: '', index: 'logs-*', interval: 15, size: 100, enabled: false }
+      esConfig.value = { address: '', username: '', password: '', index: 'logs-*', interval: 15, size: 100, query: '', enabled: false }
     }
   } catch(e) {
     esStatus.value = 'disconnected'

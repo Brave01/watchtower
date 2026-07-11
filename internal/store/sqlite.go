@@ -141,6 +141,7 @@ func (s *SQLiteStore) migrate() error {
 		"ALTER TABLE webhook_config ADD COLUMN name TEXT DEFAULT ''",
 		"ALTER TABLE alert_rules ADD COLUMN webhook_platform TEXT DEFAULT 'default'",
 		"ALTER TABLE alert_rules ADD COLUMN webhook_id INTEGER DEFAULT 0",
+		"ALTER TABLE es_config ADD COLUMN size INTEGER DEFAULT 100",
 	}
 	for _, sql := range alterTableMigrations {
 		s.db.Exec(sql) // 忽略错误（列已存在时会报错）
