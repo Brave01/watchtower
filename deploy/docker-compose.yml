@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  scm:
+    build: .
+    container_name: scm
+    restart: always
+    ports:
+      - "3972:3972"
+    volumes:
+      - ./data:/app/data
+      - ./configs/.env:/app/configs/.env
+      - ./configs/config.yaml:/app/configs/config.yaml
+    environment:
+      - TZ=Asia/Shanghai
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN

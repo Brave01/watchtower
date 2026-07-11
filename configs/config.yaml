@@ -1,0 +1,34 @@
+# 服务端口、ES 连接信息（不含密码）、探针间隔等非敏感配置
+# 所有密码/密钥统一存放在 .env 文件中，通过环境变量注入
+
+server:
+  port: 3972
+
+log_monitor:
+  elasticsearch:
+    address: "http://your-es-server:9200"
+    username: "elastic"
+    # 密码通过 .env 中的 ES_PASSWORD 注入
+    index: "k8s-logs-*"
+    interval: 10
+    query:
+      size: 100
+      sort:
+        - "@timestamp":
+            order: desc
+      query:
+        bool:
+          filter:
+            - range:
+                "@timestamp":
+                  gte: "now-{interval}s"
+                  lte: "now"
+  feishu_webhook:
+    url: ""
+    max_retries: 3
+
+dashboard:
+  probe_interval: "15s"
+
+auth:
+  admin_user: "admin"
