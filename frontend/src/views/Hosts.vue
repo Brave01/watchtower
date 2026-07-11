@@ -543,7 +543,7 @@ const batchHostItems = ref([{ hostname: '', ip: '', cpu: '', memory: '', disk: '
 const showAddRoleModal = ref(false)
 const editingRole = ref(null)
 const roleFormName = ref('')
-const roleFormType = ref('')
+const roleFormType = ref('TCP')
 const roleFormPort = ref(0)
 const roleFormPath = ref('')
 const roleFormTimeout = ref(5)
@@ -555,7 +555,7 @@ const assignRoleName = ref('')
 
 // Batch Create Roles
 const showBatchRoleModal = ref(false)
-const batchRoleItems = ref([{ name: '', type: 'ICMP', port: 0, path: '/', timeout: 5 }])
+const batchRoleItems = ref([{ name: '', type: 'TCP', port: 0, path: '/', timeout: 5 }])
 
 // SSH Credential Management
 const showSSHCredModal = ref(false)
@@ -823,7 +823,7 @@ function editRole(role) {
 function resetRoleForm() {
   editingRole.value = null
   roleFormName.value = ''
-  roleFormType.value = ''
+  roleFormType.value = 'TCP'
   roleFormPort.value = 0
   roleFormPath.value = ''
   roleFormTimeout.value = 5
@@ -882,11 +882,11 @@ async function submitAssign() {
 
 // Batch Create Roles
 function openBatchRoleModal() {
-  batchRoleItems.value = [{ name: '', type: 'ICMP', port: 0, path: '/', timeout: 5 }]
+  batchRoleItems.value = [{ name: '', type: 'TCP', port: 0, path: '/', timeout: 5 }]
   showBatchRoleModal.value = true
 }
 function addBatchRole() {
-  batchRoleItems.value.push({ name: '', type: 'ICMP', port: 0, path: '/', timeout: 5 })
+  batchRoleItems.value.push({ name: '', type: 'TCP', port: 0, path: '/', timeout: 5 })
 }
 function removeBatchRole(idx) {
   if (batchRoleItems.value.length > 1) batchRoleItems.value.splice(idx, 1)
