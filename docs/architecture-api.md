@@ -1,8 +1,8 @@
-# Server Controller Manager (SCM) — 架构与 API 文档
+# Watchtower (瞭望塔) — 架构与 API 文档
 
 ## 1. 项目概述
 
-SCM（Server Controller Manager）是一个服务大盘管理平台，提供以下核心功能：
+Watchtower（瞭望塔）是一个服务大盘管理平台，提供以下核心功能：
 
 - **主机存活探测**：通过 ICMP ping 定期检测主机的在线状态
 - **服务拨测**：支持 TCP、HTTP、SSH 等多种协议的服务级别健康检查
@@ -935,7 +935,7 @@ type ESConfig struct {
 
 ### 6.1 认证方式
 
-SCM 使用 **JWT HS256**（HMAC-SHA256）进行无状态会话管理，由 `internal/auth/jwt.go` 实现。
+Watchtower 使用 **JWT HS256**（HMAC-SHA256）进行无状态会话管理，由 `internal/auth/jwt.go` 实现。
 
 - **签名密钥**：通过环境变量 `AUTH_JWT_SECRET` 配置（默认 `dev-secret`）
 - **Token 结构**：Base64Url(header) + "." + Base64Url(claims) + "." + Base64Url(signature)

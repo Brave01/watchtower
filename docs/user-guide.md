@@ -1,4 +1,4 @@
-# Server Controller Manager (SCM) 用户手册
+# Watchtower (瞭望塔) 用户手册
 
 ---
 

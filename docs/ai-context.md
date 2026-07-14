@@ -1,8 +1,8 @@
-# SCM — AI 上下文文档
+# Watchtower (瞭望塔) — AI 上下文文档
 
 ## 项目概述
 
-Server Controller Manager (SCM) — Go + Vue 3 全栈单页应用，Linux 服务大盘管理平台。
+Watchtower (瞭望塔) — Go + Vue 3 全栈单页应用，Linux 服务大盘管理平台。
 
 ## 项目结构
 
