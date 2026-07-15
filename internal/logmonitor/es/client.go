@@ -79,6 +79,38 @@ func NewClient(address, username, password, index string, interval, size int, qu
 	return c, nil
 }
 
+// TestQuery 发送一条测试查询，验证 ES 是否可连接且索引可访问
+func (c *Client) TestQuery(ctx context.Context) error {
+	// 用 size=1 的匹配查询验证索引和连接
+	queryBody := map[string]interface{}{
+		"query": map[string]interface{}{
+			"match_all": map[string]interface{}{},
+		},
+	}
+	body, err := json.Marshal(queryBody)
+	if err != nil {
+		return fmt.Errorf("构建测试查询失败: %w", err)
+	}
+
+	res, err := c.es.Search(
+		c.es.Search.WithContext(ctx),
+		c.es.Search.WithIndex(c.index),
+		c.es.Search.WithBody(bytes.NewReader(body)),
+		c.es.Search.WithSize(1),
+		c.es.Search.WithSort("@timestamp:desc"),
+	)
+	if err != nil {
+		return fmt.Errorf("ES 连接失败: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("ES 查询返回错误: %s", res.String())
+	}
+
+	return nil
+}
+
 // Search 执行搜索
 func (c *Client) Search(ctx context.Context) ([]LogEntry, error) {
 	// 构建查询体，替换 {interval} 占位符

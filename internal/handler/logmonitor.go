@@ -443,8 +443,10 @@ func handleESConfig(deps *LogMonitorDeps) http.HandlerFunc {
 		case http.MethodGet:
 			cfg, _ := deps.Store.GetESConfig()
 			status := "disconnected"
-			if deps.ESPipeline != nil && deps.ESPipeline.IsRunning() {
-				status = "connected"
+			lastError := ""
+			if deps.ESPipeline != nil {
+				status = deps.ESPipeline.Status()
+				lastError = deps.ESPipeline.LastError()
 			}
 			resp := map[string]interface{}{
 				"config": &store.ESConfig{
@@ -457,12 +459,15 @@ func handleESConfig(deps *LogMonitorDeps) http.HandlerFunc {
 					Query:    "",
 					Enabled:  false,
 				},
-				"status": status,
+				"status":     status,
+				"last_error": lastError,
 			}
 			if cfg != nil {
-				// 不返回密码
+				hasPassword := cfg.Password != ""
+				// 不返回密码明文
 				cfg.Password = ""
 				resp["config"] = cfg
+				resp["has_password"] = hasPassword
 			}
 			json.NewEncoder(w).Encode(resp)
 

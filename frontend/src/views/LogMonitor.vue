@@ -44,9 +44,10 @@
       <button class="btn" @click="testWebhook">测试 Webhook</button>
       <button class="btn" @click="clearLimited">清除限流</button>
       <button class="btn" @click="openESModal">ES 配置</button>
-      <span :class="'connection-badge '+(esStatus==='connected'?'connected':'disconnected')" style="margin-left:auto">
+      <span :class="'connection-badge '+(esStatus==='connected'?'connected':esStatus==='error'?'error':'disconnected')" style="margin-left:auto">
         <span class="badge-dot"></span>
-        日志服务: {{ esStatus==='connected' ? '已连接' : '未连接' }}
+        日志服务: {{ esStatus==='connected' ? '已连接' : esStatus==='error' ? '连接错误' : '未连接' }}
+        <span v-if="esStatus==='error' && esLastError" style="margin-left:6px;font-size:11px;color:#ef4444;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle" :title="esLastError">{{ esLastError }}</span>
       </span>
     </div>
 
@@ -309,14 +310,15 @@
       <div class="modal" @click.stop style="max-width:480px">
         <div class="modal-header">
           <span class="modal-title">ES 日志服务配置</span>
-          <span :class="'connection-badge '+(esStatus==='connected'?'connected':'disconnected')">
+          <span :class="'connection-badge '+(esStatus==='connected'?'connected':esStatus==='error'?'error':'disconnected')">
             <span class="badge-dot"></span>
-            {{ esStatus==='connected' ? '已连接' : '未连接' }}
+            {{ esStatus==='connected' ? '已连接' : esStatus==='error' ? '连接错误' : '未连接' }}
           </span>
           <button class="modal-close" @click="showESModal=false">&times;</button>
         </div>
         <div class="modal-body">
           <div v-if="!esConfig" style="text-align:center;color:var(--text-secondary);padding:16px 0">加载中...</div>
+          <div v-else-if="esStatus==='error' && esLastError" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#ef4444;word-break:break-all">{{ esLastError }}</div>
           <template v-else>
             <div class="form-group">
               <label class="form-label">ES 地址</label>
@@ -425,6 +427,7 @@ const whTestResult = ref('')
 // ES Config
 const showESModal = ref(false)
 const esStatus = ref('disconnected')
+const esLastError = ref('')
 const esConfig = ref(null)
 
 let pollTimer = null
@@ -435,8 +438,9 @@ async function loadESConfig() {
   try {
     const data = await api('/api/es/config')
     esStatus.value = data.status || 'disconnected'
+    esLastError.value = data.last_error || ''
     if (data.config) {
-      esConfig.value = { ...data.config, password: PWD_PLACEHOLDER }
+      esConfig.value = { ...data.config, password: data.has_password ? PWD_PLACEHOLDER : '' }
     } else {
       esConfig.value = { address: '', username: '', password: '', index: 'logs-*', interval: 15, size: 100, query: '', enabled: false }
     }
@@ -450,6 +454,7 @@ async function loadESStatus() {
   try {
     const data = await api('/api/es/config')
     esStatus.value = data.status || 'disconnected'
+    esLastError.value = data.last_error || ''
   } catch(e) {
     esStatus.value = 'disconnected'
   }
