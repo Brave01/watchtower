@@ -187,8 +187,15 @@ func main() {
 		log.Printf("[Main] Webhook #%d 已就绪 (%s)", clientID, client.GetConfig().Platform)
 	}
 
-	// ES 管道（仅创建实例，由 Web UI 保存配置后动态启动）
+	// ES 管道：创建实例，如有已保存的配置则自动启动
 	esPipeline := handler.NewESPipeline(logParser, deduper, filterEngine, wsHub, whClients, defaultWhClient)
+	if esCfg, err := st.GetESConfig(); err == nil && esCfg != nil && esCfg.Address != "" && esCfg.Enabled {
+		if err := esPipeline.Start(esCfg); err != nil {
+			log.Printf("[Main] ES 管道自动启动失败: %v", err)
+		} else {
+			log.Printf("[Main] ES 管道已自动启动: %s -> %s (间隔%ds)", esCfg.Address, esCfg.Index, esCfg.Interval)
+		}
+	}
 
 	// ========== 拨测调度器 ==========
 	interval := 15 * time.Second

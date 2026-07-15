@@ -182,9 +182,78 @@ func (c *Client) Search(ctx context.Context) ([]LogEntry, error) {
 }
 
 func (c *Client) buildQueryBody() map[string]interface{} {
-	body := deepCopyMap(c.query)
-	setInterval(body, c.interval)
-	return body
+	// 始终基于配置的 interval 构建时间范围过滤
+	timeFilter := map[string]interface{}{
+		"range": map[string]interface{}{
+			"@timestamp": map[string]interface{}{
+				"gte": fmt.Sprintf("now-%ds", c.interval),
+			},
+		},
+	}
+
+	userQuery := deepCopyMap(c.query)
+	setInterval(userQuery, c.interval)
+
+	// 如果用户有自定义查询 DSL，与时间范围过滤合并
+	if len(userQuery) > 0 {
+		return mergeWithTimeFilter(userQuery, timeFilter)
+	}
+
+	// 无自定义查询，仅使用时间范围过滤
+	return map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"filter": []map[string]interface{}{timeFilter},
+			},
+		},
+	}
+}
+
+// mergeWithTimeFilter 将用户查询与时间范围过滤合并为 bool/filter 查询
+func mergeWithTimeFilter(userQuery map[string]interface{}, timeFilter map[string]interface{}) map[string]interface{} {
+	// 如果用户查询已经有 query 字段，提取其中的过滤条件
+	if uq, ok := userQuery["query"]; ok {
+		// 用户查询是完整的 ES 搜索体 {query: {...}}
+		switch q := uq.(type) {
+		case map[string]interface{}:
+			// 如果用户查询本身就是 bool/filter，直接追加时间过滤
+			if boolQ, ok := q["bool"]; ok {
+				if bm, ok := boolQ.(map[string]interface{}); ok {
+					if existing, ok := bm["filter"]; ok {
+						if filters, ok := existing.([]interface{}); ok {
+							bm["filter"] = append([]interface{}{timeFilter}, filters...)
+							return userQuery
+						}
+					}
+					bm["filter"] = []interface{}{timeFilter}
+					return userQuery
+				}
+			}
+			// 其他查询类型（如 match、term 等），包装为 bool/filter
+			return map[string]interface{}{
+				"query": map[string]interface{}{
+					"bool": map[string]interface{}{
+						"filter": []interface{}{
+							timeFilter,
+							q,
+						},
+					},
+				},
+			}
+		}
+	}
+
+	// 用户查询不是标准 ES 搜索体格式，整体作为 filter
+	return map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"filter": []interface{}{
+					timeFilter,
+					userQuery,
+				},
+			},
+		},
+	}
 }
 
 func setInterval(query map[string]interface{}, interval int) {
