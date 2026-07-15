@@ -10,9 +10,9 @@ services:
     ports:
       - "3972:3972"
     volumes:
-      - ./data:/app/data
-      - ./configs/.env:/app/configs/.env
-      - ./configs/config.yaml:/app/configs/config.yaml
+      - ../data:/app/data
+      - ../configs/.env:/app/configs/.env
+      - ../configs/config.yaml:/app/configs/config.yaml
     environment:
       - TZ=Asia/Shanghai
     cap_add:
