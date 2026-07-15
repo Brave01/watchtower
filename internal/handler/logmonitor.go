@@ -336,9 +336,12 @@ func handleWebhookTest(deps *LogMonitorDeps) http.HandlerFunc {
 func handleLimitedAlerts(deps *LogMonitorDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		alerts, _ := deps.Store.ListLimitedAlerts(200, 0)
+		if alerts == nil {
+			alerts = make([]store.LimitedAlert, 0)
+		}
 		dbTotal, _ := deps.Store.CountLimitedAlerts()
 		// deps.Webhook may be nil; if set, also get its in-memory buffer
-		var bufAlerts []map[string]interface{}
+		bufAlerts := make([]map[string]interface{}, 0)
 		if deps.Webhook != nil {
 			for _, e := range deps.Webhook.GetLimitedAlerts() {
 				bufAlerts = append(bufAlerts, map[string]interface{}{
