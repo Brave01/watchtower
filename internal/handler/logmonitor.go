@@ -444,7 +444,16 @@ func handleESConfig(deps *LogMonitorDeps) http.HandlerFunc {
 				status = "connected"
 			}
 			resp := map[string]interface{}{
-				"config": nil,
+				"config": &store.ESConfig{
+					Address:  "",
+					Username: "",
+					Password: "",
+					Index:    "logs-*",
+					Interval: 15,
+					Size:     100,
+					Query:    "",
+					Enabled:  false,
+				},
 				"status": status,
 			}
 			if cfg != nil {

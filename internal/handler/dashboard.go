@@ -180,6 +180,9 @@ func handleHosts(deps *DashboardDeps) http.HandlerFunc {
 
 		case http.MethodGet:
 			hosts, _ := deps.Store.ListHosts()
+			if hosts == nil {
+				hosts = make([]store.Host, 0)
+			}
 			writeJSON(w, http.StatusOK, apiResponse{Success: true, Data: hosts})
 
 		case http.MethodPut:
@@ -430,6 +433,9 @@ func handleRoles(deps *DashboardDeps) http.HandlerFunc {
 
 		case http.MethodGet:
 			roles, _ := deps.Store.ListRoles()
+			if roles == nil {
+				roles = make([]store.Role, 0)
+			}
 			writeJSON(w, http.StatusOK, apiResponse{Success: true, Data: roles})
 
 		case http.MethodDelete:
