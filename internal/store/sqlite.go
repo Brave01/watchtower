@@ -194,7 +194,7 @@ func (s *SQLiteStore) ListAlertRules() ([]AlertRule, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var rules []AlertRule
+	rules := make([]AlertRule, 0)
 	for rows.Next() {
 		var r AlertRule
 		if err := rows.Scan(&r.ID, &r.Name, &r.Enabled, &r.Keywords, &r.ExcludeKeywords, &r.Level, &r.RegexPattern, &r.Cooldown, &r.MessageTemplate, &r.WebhookID, &r.CreatedAt, &r.UpdatedAt); err != nil {

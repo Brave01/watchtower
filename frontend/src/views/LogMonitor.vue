@@ -502,7 +502,7 @@ async function loadStats() {
 async function loadRules() {
   try {
     const data = await api('/api/rules')
-    rules.value = data.rules || data || []
+    rules.value = data.rules || []
   } catch(e) {}
 }
 
