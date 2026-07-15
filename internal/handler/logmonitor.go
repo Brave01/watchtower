@@ -283,6 +283,9 @@ func handleWebhookTest(deps *LogMonitorDeps) http.HandlerFunc {
 		}
 		var req struct {
 			WebhookID int    `json:"webhook_id"`
+			URL       string `json:"url"`
+			Platform  string `json:"platform"`
+			Secret    string `json:"secret"`
 			RuleName  string `json:"rule_name"`
 			Message   string `json:"message"`
 			Level     string `json:"level"`
@@ -299,6 +302,19 @@ func handleWebhookTest(deps *LogMonitorDeps) http.HandlerFunc {
 			if c, ok := deps.WebhookClients[req.WebhookID]; ok {
 				client = c
 			}
+		}
+		// 如果前端提供了 URL，用表单数据创建临时客户端用于测试
+		if client == nil && req.URL != "" {
+			platform := req.Platform
+			if platform == "" {
+				platform = "feishu"
+			}
+			client = webhook.NewClient(&webhook.WebhookConfig{
+				Platform: platform,
+				URL:      req.URL,
+				Secret:   req.Secret,
+				Enabled:  true,
+			})
 		}
 		if client == nil {
 			client = deps.Webhook

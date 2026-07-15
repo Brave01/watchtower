@@ -666,7 +666,7 @@ async function openWebhookModal() {
 
 function cancelEditWebhook() {
   editingWebhook.value = null
-  whForm.value = { name: '', platform: 'feishu', url: '', secret: '', mention_type: 'none', mention_users: '', enabled: true, rate_limit: 0, rate_limit_per_second: 0, template: '' }
+  whForm.value = { name: '', platform: 'feishu', url: '', secret: '', mention_type: 'none', mention_users: '', enabled: true, rate_limit: 0, rate_limit_per_second: 0, template: '🚨 告警: {rule_name}\n级别: {level}\n来源: {source}\n时间: {timestamp}\n消息: {message}' }
   whTestResult.value = ''
 }
 
@@ -710,16 +710,20 @@ async function testWebhookTemplate() {
   if (!whForm.value.template) { showToast('请先填写模板内容', 'error'); return }
   whTestResult.value = '发送中...'
   try {
-    const resp = await api('/api/webhook/test', { method: 'POST', body: JSON.stringify({ template: whForm.value.template, platform: whForm.value.platform }) })
-    whTestResult.value = resp.message || '测试消息已发送'
+    const resp = await api('/api/webhook/test', { method: 'POST', body: JSON.stringify({ template: whForm.value.template, url: whForm.value.url, platform: whForm.value.platform, secret: whForm.value.secret }) })
+    whTestResult.value = resp.success !== false ? (resp.message || '测试消息已发送') : (resp.message || '发送失败')
   } catch(e) {
     whTestResult.value = '发送失败: ' + e.message
   }
 }
 
 async function testWebhook() {
-  await api('/api/webhook/test', { method: 'POST' })
-  showToast('测试消息已发送', 'success')
+  try {
+    const resp = await api('/api/webhook/test', { method: 'POST' })
+    showToast(resp.message || '测试消息已发送', resp.success !== false ? 'success' : 'error')
+  } catch(e) {
+    showToast('测试失败: ' + e.message, 'error')
+  }
 }
 
 async function clearLimited() {
