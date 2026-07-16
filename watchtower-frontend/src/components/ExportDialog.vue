@@ -17,7 +17,7 @@
             @keyup.enter="confirm"
             @keyup.esc="$emit('close')"
           />
-          <p class="form-hint">文件将保存为 <code>{{ (name || defaultName) + '-yyyy-MM-DD' }}.{{ ext }}</code></p>
+          <p class="form-hint">文件将保存为 <code>{{ (name || defaultName) + todayStr }}.{{ ext }}</code></p>
         </div>
       </div>
       <div class="modal-footer">
@@ -29,7 +29,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 
 const props = defineProps({
   title: { type: String, default: '导出文件' },
@@ -43,6 +43,14 @@ const name = ref('')
 const error = ref('')
 const inputRef = ref(null)
 
+const todayStr = computed(() => {
+  const now = new Date()
+  const yyyy = now.getFullYear()
+  const MM = String(now.getMonth() + 1).padStart(2, '0')
+  const DD = String(now.getDate()).padStart(2, '0')
+  return `-${yyyy}-${MM}-${DD}`
+})
+
 onMounted(() => {
   nextTick(() => inputRef.value?.focus())
 })
@@ -53,12 +61,6 @@ function confirm() {
     error.value = '文件名不能为空'
     return
   }
-  // 自动追加日期后缀 -yyyy-MM-DD
-  const now = new Date()
-  const yyyy = now.getFullYear()
-  const MM = String(now.getMonth() + 1).padStart(2, '0')
-  const DD = String(now.getDate()).padStart(2, '0')
-  const dateSuffix = `-${yyyy}-${MM}-${DD}`
-  emit('export', fileName + dateSuffix)
+  emit('export', fileName + todayStr.value)
 }
 </script>
