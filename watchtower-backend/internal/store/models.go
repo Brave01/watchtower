@@ -23,6 +23,7 @@ type Host struct {
 	ID            string    `json:"id"`
 	IP            string    `json:"ip"`
 	Hostname      string    `json:"hostname"`
+	Project       string    `json:"project"`
 	CPU           string    `json:"cpu"`
 	Memory        string    `json:"memory"`
 	Disk          string    `json:"disk"`

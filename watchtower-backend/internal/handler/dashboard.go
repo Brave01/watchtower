@@ -139,6 +139,7 @@ func handleHosts(deps *DashboardDeps) http.HandlerFunc {
 			var req struct {
 				IP       string `json:"ip"`
 				Hostname string `json:"hostname"`
+				Project  string `json:"project"`
 				CPU      string `json:"cpu"`
 				Memory   string `json:"memory"`
 				Disk     string `json:"disk"`
@@ -155,6 +156,7 @@ func handleHosts(deps *DashboardDeps) http.HandlerFunc {
 				ID:       uuid.New().String(),
 				IP:       req.IP,
 				Hostname: req.Hostname,
+				Project:  req.Project,
 				CPU:      req.CPU,
 				Memory:   req.Memory,
 				Disk:     req.Disk,
@@ -255,6 +257,7 @@ func handleHostUpdate(deps *DashboardDeps) http.HandlerFunc {
 			ID       string `json:"id"`
 			IP       string `json:"ip"`
 			Hostname string `json:"hostname"`
+			Project  string `json:"project"`
 			CPU      string `json:"cpu"`
 			Memory   string `json:"memory"`
 			Disk     string `json:"disk"`
@@ -273,6 +276,9 @@ func handleHostUpdate(deps *DashboardDeps) http.HandlerFunc {
 		}
 		if req.Hostname != "" {
 			host.Hostname = req.Hostname
+		}
+		if req.Project != "" {
+			host.Project = req.Project
 		}
 		if req.CPU != "" {
 			host.CPU = req.CPU
@@ -302,6 +308,7 @@ func handleBatchHosts(deps *DashboardDeps) http.HandlerFunc {
 			Hosts []struct {
 				Hostname string `json:"hostname"`
 				IP       string `json:"ip"`
+				Project  string `json:"project"`
 				CPU      string `json:"cpu"`
 				Memory   string `json:"memory"`
 				Disk     string `json:"disk"`
@@ -322,6 +329,7 @@ func handleBatchHosts(deps *DashboardDeps) http.HandlerFunc {
 				ID:       uuid.New().String(),
 				IP:       hr.IP,
 				Hostname: hr.Hostname,
+				Project:  hr.Project,
 				CPU:      hr.CPU,
 				Memory:   hr.Memory,
 				Disk:     hr.Disk,
@@ -729,8 +737,8 @@ func handleExport(deps *DashboardDeps) http.HandlerFunc {
 		sheet := "主机列表"
 		f.SetSheetName("Sheet1", sheet)
 
-		// 基础列：主机名称/主机地址/状态/CPU/内存
-		baseHeaders := []string{"主机名称", "主机地址", "状态", "CPU(核)", "内存(GB)"}
+		// 基础列：主机名称/主机地址/状态/CPU/内存/项目
+		baseHeaders := []string{"主机名称", "主机地址", "状态", "CPU(核)", "内存(GB)", "项目"}
 		diskHeaders := make([]string, len(mountOrder))
 		for i, mount := range mountOrder {
 			if mount == "/" {
@@ -743,7 +751,7 @@ func handleExport(deps *DashboardDeps) http.HandlerFunc {
 		allHeaders := append(append(append([]string{}, baseHeaders...), diskHeaders...), tailHeaders...)
 
 		// 基础列宽度
-		baseWidths := []float64{20, 20, 10, 10, 10}
+		baseWidths := []float64{20, 20, 10, 10, 10, 16}
 		diskWidth := 14.0
 		tailWidths := []float64{30, 12}
 
@@ -808,6 +816,7 @@ func handleExport(deps *DashboardDeps) http.HandlerFunc {
 			setCell(statusStr)
 			setCell(h.CPU)
 			setCell(h.Memory)
+			setCell(h.Project)
 
 			// 磁盘分区列
 			parts := hostParts[h.ID]
@@ -831,7 +840,7 @@ func handleExport(deps *DashboardDeps) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-		w.Header().Set("Content-Disposition", "attachment; filename=hosts_export.xlsx")
+		w.Header().Set("Content-Disposition", "attachment; filename=hosts_export_"+time.Now().Format("20060102_150405")+".xlsx")
 		if err := f.Write(w); err != nil {
 			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: "导出失败: " + err.Error()})
 			return

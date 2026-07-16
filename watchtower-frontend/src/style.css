@@ -489,3 +489,48 @@ tr:hover td { background: var(--hover-bg); }
   overflow: hidden;
   background: var(--card-bg);
 }
+
+/* Project tag */
+.project-tag {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 4px;
+  background: rgba(59,130,246,.1);
+  color: var(--accent);
+  cursor: pointer;
+  transition: all .15s;
+  margin-top: 2px;
+}
+.project-tag:hover { background: rgba(59,130,246,.2); }
+.project-chip {
+  font-size: 12px;
+  padding: 3px 12px;
+}
+
+/* Project input with suggestions */
+.project-input-wrap { position: relative; }
+.suggestions-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.1);
+  max-height: 180px;
+  overflow-y: auto;
+  list-style: none;
+  margin-top: 2px;
+  padding: 4px 0;
+}
+.suggestions-dropdown li {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background .1s;
+}
+.suggestions-dropdown li:hover { background: var(--hover-bg); }

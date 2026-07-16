@@ -86,7 +86,7 @@ async function load() {
             const roleName = (a.role && a.role.name) || a.role_id || 'unknown'
             if (!byRole[roleName]) byRole[roleName] = []
             byRole[roleName].push({
-              message: (hostInfo.hostname || hostInfo.ip || '?') + ' (' + hostInfo.ip + ')',
+              message: (hostInfo.hostname || hostInfo.ip || '?') + ' (' + hostInfo.ip + ')' + (hostInfo.project ? ' [' + hostInfo.project + ']' : ''),
               time: hostInfo.last_check_time || '',
               level: hwr.is_alive ? 'info' : 'warning',
             })

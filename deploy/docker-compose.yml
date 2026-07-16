@@ -12,9 +12,9 @@ services:
     expose:
       - "3972"
     volumes:
-      - ./watchtower-backend/data:/app/data
-      - ./watchtower-backend/configs/.env:/app/configs/.env
-      - ./watchtower-backend/configs/config.yaml:/app/configs/config.yaml
+      - ../watchtower-backend/data:/app/data
+      - ../watchtower-backend/configs/.env:/app/configs/.env
+      - ../watchtower-backend/configs/config.yaml:/app/configs/config.yaml
     environment:
       - TZ=Asia/Shanghai
     cap_add:
@@ -33,3 +33,4 @@ services:
       - "3972:80"
     depends_on:
       - backend
+    privileged: true

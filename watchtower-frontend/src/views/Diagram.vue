@@ -16,8 +16,11 @@
       <button class="btn" @click="autoLayout">自动布局</button>
       <button class="btn" @click="save">保存</button>
       <button class="btn" @click="clearCanvas">清除</button>
-      <button class="btn" @click="exportImage">PDF</button>
+      <button class="btn" @click="showExportDialog = true">PDF</button>
     </div>
+
+    <!-- PDF 导出命名弹窗 -->
+    <ExportDialog v-if="showExportDialog" title="导出架构图" :default-name="'architecture-' + Date.now()" ext="pdf" @close="showExportDialog=false" @export="doExportPdf" />
 
     <!-- Palette: Server nodes from API -->
     <div class="diagram-palette">
@@ -145,6 +148,7 @@ import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { api, showToast } from '../api.js'
 import ServerNode from '../components/ServerNode.vue'
+import ExportDialog from '../components/ExportDialog.vue'
 
 const theme = ref(localStorage.getItem('scm-theme') || 'light')
 const borderColor = computed(() => theme.value === 'dark' ? '#334155' : '#e2e8f0')
@@ -153,6 +157,7 @@ const flowRef = ref(null)
 const nodes = ref([])
 const edges = ref([])
 const mode = ref(localStorage.getItem('scm-diagram-mode') || 'select')
+const showExportDialog = ref(false)
 const { fitView, screenToFlowCoordinate } = useVueFlow({ id: 'default' })
 
 const connectionMode = computed(() => {
@@ -608,7 +613,7 @@ function save() {
   showToast('架构图已保存到本地', 'success')
 }
 
-async function exportImage() {
+async function exportImage(fileName) {
   const wrapper = document.querySelector('.diagram-canvas-wrapper')
   if (!wrapper) { showToast('未找到画布元素', 'error'); return }
   try {
@@ -653,13 +658,18 @@ async function exportImage() {
     const x = (pdfWidth - finalW) / 2
     const y = (pdfHeight - finalH) / 2
     pdf.addImage(dataUrl, 'PNG', x, y, finalW, finalH)
-    pdf.save('architecture-' + Date.now() + '.pdf')
+    pdf.save(name + '.pdf')
     showToast('导出 PDF 成功', 'success')
   } catch(e) {
     console.error('Export failed', e)
     wrapper.classList.remove('is-exporting')
     showToast('导出失败: ' + e.message, 'error')
   }
+}
+
+function doExportPdf(name) {
+  showExportDialog.value = false
+  exportImage(name)
 }
 
 // Click outside to close context menu

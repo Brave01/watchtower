@@ -12,7 +12,7 @@
       <button class="btn" @click="openAddRoleModal">添加角色</button>
       <button class="btn" @click="openAssignModal">分配角色</button>
       <button class="btn" @click="openBatchRoleModal">批量创建角色</button>
-      <button class="btn btn-success" @click="downloadExcel">导出 Excel</button>
+      <button class="btn btn-success" @click="showExportDialog = true">导出 Excel</button>
       <button class="btn" @click="openRoleManageModal">角色管理</button>
       <button class="btn" @click="openSSHCredModal">SSH 凭据</button>
       <button class="btn" @click="loadHosts; loadRoles">刷新</button>
@@ -20,10 +20,16 @@
       <span style="font-size:13px;color:var(--text-secondary)">共 {{ hosts.length }} 台</span>
     </div>
 
+    <!-- Excel 导出命名弹窗 -->
+    <ExportDialog v-if="showExportDialog" title="导出主机列表" :default-name="'hosts_export-' + Date.now()" ext="xlsx" @close="showExportDialog=false" @export="doExportHosts" />
+
     <!-- Role filters -->
-    <div v-if="roles.length > 0" class="role-filters">
-      <button class="role-chip" :class="{active: activeRole === ''}" @click="activeRole=''">全部</button>
-      <button v-for="r in roles" :key="r.id" class="role-chip" :class="{active: activeRole === r.name}" @click="activeRole=r.name">{{ roleDisplayName(r.name) }}</button>
+    <div v-if="roles.length > 0 || allProjects.length > 0" class="role-filters">
+      <button class="role-chip" :class="{active: activeRole === '' && activeProject === ''}" @click="activeRole='';activeProject=''">全部</button>
+      <!-- 项目筛选器 -->
+      <button v-for="p in allProjects" :key="p" class="role-chip project-chip" :class="{active: activeProject === p}" @click="activeProject=p;activeRole=''">{{ p }}</button>
+      <!-- 角色筛选器 -->
+      <button v-for="r in roles" :key="r.id" class="role-chip" :class="{active: activeRole === r.name}" @click="activeRole=r.name;activeProject=''">{{ roleDisplayName(r.name) }}</button>
     </div>
 
     <!-- Hosts grid -->
@@ -34,6 +40,7 @@
           <div>
             <div class="host-name">{{ host.hostname || host.ip }}</div>
             <div class="host-addr">{{ host.ip || '-' }}</div>
+            <span v-if="host.project" class="project-tag" @click.stop="activeProject=host.project;activeRole=''">{{ host.project }}</span>
           </div>
         </div>
         <div class="host-alive">
@@ -76,6 +83,15 @@
           <div class="form-group">
             <label class="form-label">主机名</label>
             <input class="form-input" v-model="formName" placeholder="可选" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">项目</label>
+            <div class="project-input-wrap">
+              <input class="form-input" v-model="formProject" placeholder="所属项目（可选）" @input="onProjectInput" @focus="showProjectSuggestions=true" @blur="hideProjectSuggestions" />
+              <ul v-if="showProjectSuggestions && filteredProjectSuggestions.length > 0" class="suggestions-dropdown">
+                <li v-for="s in filteredProjectSuggestions" :key="s" @mousedown.prevent="selectProject(s)">{{ s }}</li>
+              </ul>
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">CPU</label>
@@ -222,6 +238,7 @@
                   <tr>
                     <th>主机名称</th>
                     <th>主机地址</th>
+                    <th>项目</th>
                     <th>CPU</th>
                     <th>内存</th>
                     <th>磁盘</th>
@@ -232,6 +249,7 @@
                   <tr v-for="(item, idx) in batchHostItems" :key="idx">
                     <td><input class="form-input" v-model="item.hostname" placeholder="web-server-01" style="font-size:13px"></td>
                     <td><input class="form-input" v-model="item.ip" placeholder="192.168.1.100" style="font-size:13px"></td>
+                    <td><input class="form-input" v-model="item.project" placeholder="项目名" style="font-size:13px"></td>
                     <td><input class="form-input" v-model="item.cpu" placeholder="4核" style="font-size:13px;width:70px"></td>
                     <td><input class="form-input" v-model="item.memory" placeholder="8GB" style="font-size:13px;width:70px"></td>
                     <td><input class="form-input" v-model="item.disk" placeholder="/:50G" style="font-size:13px"></td>
@@ -467,6 +485,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { api, showToast } from '../api.js'
+import ExportDialog from '../components/ExportDialog.vue'
 
 // 后端 Host.status 是 int: 0=Unknown,1=Up,2=Down,3=Warning,4=Muted
 const STATUS_MAP = { 0: 'gray', 1: 'green', 2: 'red', 3: 'yellow', 4: 'yellow' }
@@ -505,6 +524,7 @@ function roleDisplayName(name) {
 const hosts = ref([])
 const roles = ref([])
 const activeRole = ref('')
+const activeProject = ref('')
 
 // Add/Edit modal
 const showAddModal = ref(false)
@@ -516,6 +536,9 @@ const formMemory = ref('')
 const formDisk = ref([{ mount: '', size: '', unit: 'GB' }])
 const formRole = ref('')
 const origRoleName = ref('')  // 编辑时记录原始角色，用于检测变更
+const formProject = ref('')
+const showProjectSuggestions = ref(false)
+const allProjects = ref([])
 
 // Terminal
 const terminalHost = ref(null)
@@ -568,6 +591,7 @@ const sshCredPrivateKey = ref('')
 
 // Role Management
 const showRoleManageModal = ref(false)
+const showExportDialog = ref(false)
 
 function hostCountByRole(roleName) {
   return hosts.value.filter(h => h.roles && h.roles.includes(roleName)).length
@@ -587,12 +611,23 @@ async function deleteRole(role) {
 
 // Computed
 const filteredHosts = computed(() => {
-  if (!activeRole.value) return hosts.value
-  // 主机可能没有 roles 字段，需要安全访问
-  return hosts.value.filter(h => {
-    const hRoles = h.roles || []
-    return hRoles.includes(activeRole.value)
-  })
+  let list = hosts.value
+  if (activeProject.value) {
+    list = list.filter(h => h.project === activeProject.value)
+  }
+  if (activeRole.value) {
+    list = list.filter(h => {
+      const hRoles = h.roles || []
+      return hRoles.includes(activeRole.value)
+    })
+  }
+  return list
+})
+
+const filteredProjectSuggestions = computed(() => {
+  if (!formProject.value) return allProjects.value
+  const q = formProject.value.toLowerCase()
+  return allProjects.value.filter(p => p.toLowerCase().includes(q))
 })
 
 function closeModal() {
@@ -605,6 +640,20 @@ function closeModal() {
   formDisk.value = [{ mount: '', size: '', unit: 'GB' }]
   formRole.value = ''
   origRoleName.value = ''
+  formProject.value = ''
+  showProjectSuggestions.value = false
+}
+
+function onProjectInput() {
+  showProjectSuggestions.value = true
+}
+function hideProjectSuggestions() {
+  // 延迟隐藏以允许 mousedown 先触发
+  setTimeout(() => { showProjectSuggestions.value = false }, 150)
+}
+function selectProject(name) {
+  formProject.value = name
+  showProjectSuggestions.value = false
 }
 
 async function loadHosts() {
@@ -653,6 +702,10 @@ async function loadHosts() {
       })
     } catch(e2) {}
     hosts.value = rawHosts
+    // 提取所有不重复的项目名
+    const projects = new Set()
+    rawHosts.forEach(h => { if (h.project) projects.add(h.project) })
+    allProjects.value = Array.from(projects).sort()
   } catch(e) {}
 }
 
@@ -675,6 +728,7 @@ async function saveHost() {
   const body = {
     ip: formAddr.value,
     hostname: formName.value || formAddr.value,
+    project: formProject.value || '',
     cpu: formCPU.value || '',
     memory: formMemory.value || '',
     disk: diskParts,
@@ -726,6 +780,7 @@ function editHost(host) {
   editingHost.value = host
   formAddr.value = host.ip || ''
   formName.value = host.hostname || ''
+  formProject.value = host.project || ''
   formCPU.value = host.cpu || ''
   formMemory.value = host.memory || ''
   formRole.value = (host.roles && host.roles.length > 0) ? host.roles[0] : ''
@@ -798,7 +853,7 @@ function removeBatchHost(idx) {
 async function submitBatchHosts() {
   const valid = batchHostItems.value.filter(h => h.hostname && h.ip)
   if (valid.length === 0) { showToast('请填写至少一条有效的主机数据', 'error'); return }
-  const hostList = valid.map(h => ({ hostname: h.hostname, ip: h.ip, cpu: h.cpu || '', memory: h.memory || '', disk: h.disk || '' }))
+  const hostList = valid.map(h => ({ hostname: h.hostname, ip: h.ip, project: h.project || '', cpu: h.cpu || '', memory: h.memory || '', disk: h.disk || '' }))
   await api('/api/hosts/batch', { method: 'POST', body: JSON.stringify({ hosts: hostList }) })
   showBatchHostModal.value = false
   showToast('批量添加 ' + valid.length + ' 台主机完成', 'success')
@@ -941,13 +996,18 @@ async function deleteSSHCred(id) {
 }
 
 // Excel Export
-async function downloadExcel() {
+function doExportHosts(name) {
+  showExportDialog.value = false
+  downloadExcel(name)
+}
+
+async function downloadExcel(fileName) {
   try {
     const res = await fetch('/api/hosts/export', { credentials: 'same-origin' })
     if (!res.ok) { showToast('导出失败', 'error'); return }
     const blob = await res.blob()
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = 'hosts_export.xlsx'
+    const a = document.createElement('a'); a.href = url; a.download = fileName + '.xlsx'
     document.body.appendChild(a); a.click(); document.body.removeChild(a)
     URL.revokeObjectURL(url)
     showToast('导出成功', 'success')
