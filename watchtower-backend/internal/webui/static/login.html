@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>登录 · 瞭望塔 Watchtower</title>
+<link rel="stylesheet" href="/common/theme.css" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--scm-bg);
+    font-family: var(--scm-font);
+  }
+  .scm-login-card {
+    width: 360px;
+    background: var(--scm-surface);
+    border-radius: 12px;
+    padding: 32px 28px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  }
+  .scm-login-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--scm-text);
+    margin: 0 0 4px;
+  }
+  .scm-login-subtitle {
+    font-size: 13px;
+    color: var(--scm-text-muted);
+    margin: 0 0 24px;
+  }
+  .scm-field { margin-bottom: 16px; }
+  .scm-field label {
+    display: block;
+    font-size: 13px;
+    color: var(--scm-text-muted);
+    margin-bottom: 6px;
+  }
+  .scm-field input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--scm-border);
+    border-radius: var(--scm-radius);
+    font-size: 14px;
+    color: var(--scm-text);
+  }
+  .scm-field input:focus {
+    outline: none;
+    border-color: var(--scm-primary);
+  }
+  .scm-login-btn {
+    width: 100%;
+    padding: 10px 12px;
+    border: none;
+    border-radius: var(--scm-radius);
+    background: var(--scm-primary);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  .scm-login-btn:hover { background: var(--scm-primary-hover); }
+  .scm-login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .scm-login-error {
+    display: none;
+    background: #fef2f2;
+    color: var(--scm-danger);
+    font-size: 13px;
+    padding: 8px 12px;
+    border-radius: var(--scm-radius);
+    margin-bottom: 16px;
+  }
+</style>
+</head>
+<body>
+  <form class="scm-login-card" id="scm-login-form">
+    <p class="scm-login-title">瞭望塔 Watchtower</p>
+    <p class="scm-login-subtitle">登录后可同时访问日志监控与服务大盘</p>
+    <div class="scm-login-error" id="scm-login-error"></div>
+    <div class="scm-field">
+      <label for="scm-username">账号</label>
+      <input id="scm-username" name="username" autocomplete="username" required />
+    </div>
+    <div class="scm-field">
+      <label for="scm-password">密码</label>
+      <input id="scm-password" name="password" type="password" autocomplete="current-password" required />
+    </div>
+    <button class="scm-login-btn" id="scm-login-submit" type="submit">登录</button>
+  </form>
+
+  <script>
+    (function () {
+      var form = document.getElementById("scm-login-form");
+      var errorBox = document.getElementById("scm-login-error");
+      var submitBtn = document.getElementById("scm-login-submit");
+
+      function redirectTarget() {
+        var params = new URLSearchParams(window.location.search);
+        return params.get("redirect") || "/";
+      }
+
+      form.addEventListener("submit", function (evt) {
+        evt.preventDefault();
+        errorBox.style.display = "none";
+        submitBtn.disabled = true;
+        submitBtn.textContent = "登录中...";
+
+        fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            username: document.getElementById("scm-username").value,
+            password: document.getElementById("scm-password").value,
+          }),
+        })
+          .then(function (res) {
+            return res.json().then(function (data) {
+              return { ok: res.ok, data: data };
+            });
+          })
+          .then(function (result) {
+            if (!result.ok) {
+              throw new Error((result.data && result.data.error) || "登录失败");
+            }
+            window.location.href = redirectTarget();
+          })
+          .catch(function (err) {
+            errorBox.textContent = err.message || "账号或密码错误";
+            errorBox.style.display = "block";
+          })
+          .finally(function () {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "登录";
+          });
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+# 服务端口、探针间隔等非敏感配置
+# 所有密码/密钥统一存放在 .env 文件中，通过环境变量注入
+# ES 日志配置请在 Web UI「日志监控 → ES 配置」中管理
+
+server:
+  port: 3972
+
+log_monitor:
+  feishu_webhook:
+    url: ""
+    max_retries: 3
+
+dashboard:
+  probe_interval: "15s"
+
+auth:
+  admin_user: "admin"
