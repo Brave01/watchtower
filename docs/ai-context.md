@@ -7,115 +7,127 @@ Watchtower (瞭望塔) — Go + Vue 3 全栈单页应用，Linux 服务大盘管
 ## 项目结构
 
 ```
-watchtower/
-├── main.go                    # 入口：配置加载 → 组件初始化 → 路由注册
-├── logmonitor_init.go         # 日志监控初始化（旧版入口）
-├── configs/
-│   ├── config.yaml            # 非敏感配置
-│   ├── .env                   # 敏感配置（ES密码/JWT密钥/管理员hash）
-│   ├── config.example.yaml    # 配置示例
-│   └── .env.example           # 环境变量示例
-├── internal/
-│   ├── store/                 # SQLite 存储层
-│   │   ├── interface.go       # Store 接口
-│   │   ├── models.go          # 数据模型
-│   │   └── sqlite.go          # 建表、CRUD、自动迁移、seedDefaults
-│   ├── auth/                  # JWT 认证
-│   │   ├── jwt.go             # HS256 签发/校验
-│   │   ├── middleware.go      # Cookie 中间件
-│   │   └── handlers.go        # 登录/登出/Me
-│   ├── dashboard/             # 拨测模块
-│   │   ├── prober.go          # ICMP/TCP/HTTP/SSH
-│   │   ├── scheduler.go       # 定时调度器
-│   │   └── ssh_ws.go          # SSH WebSocket（BinaryMessage）
-│   ├── handler/               # HTTP 路由与处理器
-│   │   ├── auth.go            # 认证路由
-│   │   ├── dashboard.go       # 大盘/主机/角色/分配 CRUD
-│   │   ├── logmonitor.go      # 日志监控 API
-│   │   └── es_pipeline.go     # ESPipeline 动态控制
-│   ├── logmonitor/            # 日志监控子系统
-│   │   ├── parser/parser.go   # ES JSON 解析器
-│   │   ├── filter/filter.go   # 告警规则过滤
-│   │   ├── dedup/dedup.go     # MD5 + TTL 去重
-│   │   ├── ws/hub.go          # WebSocket Hub
-│   │   ├── es/client.go       # ES 客户端（支持 size 参数）
-│   │   └── webhook/feishu.go  # Webhook 客户端
-│   └── webui/
-│       ├── assets.go          # go:embed
-│       └── static/dist/       # Vite 构建产物
-├── frontend/                  # Vue 3 + Vite SPA
-│   └── src/
-│       ├── views/
-│       │   ├── Dashboard.vue  # 大盘
-│       │   ├── Hosts.vue      # 主机 CRUD + SSH
-│       │   ├── Diagram.vue    # 架构图（Vue Flow）
-│       │   └── LogMonitor.vue # 日志监控
-│       └── components/
-│           └── ServerNode.vue # 8 Handle 自定义节点
-└── deploy/                      # 部署文件
-    ├── Dockerfile
-    ├── docker-compose.yml
-    └── deploy.md
+server_controller_manager/
+├── watchtower-backend/          # Go 后端代码
+│   ├── main.go                  # 入口：配置加载 → 组件初始化 → 路由注册
+│   ├── configs/
+│   │   ├── config.yaml          # 非敏感配置
+│   │   ├── .env                 # 敏感配置（ES密码/JWT密钥/管理员hash）
+│   │   ├── config.example.yaml  # 配置示例
+│   │   └── .env.example         # 环境变量示例
+│   ├── data/
+│   │   └── server.db            # SQLite 数据库文件（自动创建）
+│   ├── internal/
+│   │   ├── store/               # SQLite 存储层
+│   │   │   ├── interface.go     # Store 接口
+│   │   │   ├── models.go        # 数据模型
+│   │   │   └── sqlite.go        # 建表、CRUD、自动迁移
+│   │   ├── auth/                # JWT 认证
+│   │   │   ├── jwt.go           # HS256 签发/校验
+│   │   │   ├── middleware.go    # Cookie 中间件
+│   │   │   └── handlers.go      # 登录/登出/Me/修改密码
+│   │   ├── dashboard/           # 拨测模块
+│   │   │   ├── prober.go        # ICMP/TCP/HTTP/SSH
+│   │   │   ├── scheduler.go     # 定时调度器
+│   │   │   └── ssh_ws.go        # SSH WebSocket（BinaryMessage）
+│   │   ├── handler/             # HTTP 路由与处理器
+│   │   │   ├── auth.go          # 认证路由
+│   │   │   ├── dashboard.go     # 大盘/主机/角色/分配 CRUD
+│   │   │   ├── logmonitor.go    # 日志监控 API
+│   │   │   └── es_pipeline.go   # ESPipeline 动态控制
+│   │   ├── logmonitor/          # 日志监控子系统
+│   │   │   ├── parser/parser.go # ES JSON 解析器
+│   │   │   ├── filter/filter.go # 告警规则过滤
+│   │   │   ├── dedup/dedup.go   # MD5 + TTL 去重
+│   │   │   ├── ws/hub.go        # WebSocket Hub
+│   │   │   ├── es/client.go     # ES 客户端（支持 size 参数）
+│   │   │   └── webhook/feishu.go# Webhook 客户端
+│   │   └── webui/
+│   │       ├── assets.go        # go:embed
+│   │       └── static/          # 共享静态文件（nav.js, theme.css, login.html）
+│   │
+│   ├── watchtower-frontend/     # Vue 3 + Vite SPA 源码
+│   │   ├── src/
+│   │   │   ├── main.js          # 入口
+│   │   │   ├── App.vue          # 根组件（侧边栏 + 登录/改密/登出）
+│   │   │   ├── api.js           # fetch 封装 + 认证 API
+│   │   │   ├── style.css        # 全局样式
+│   │   │   ├── views/
+│   │   │   │   ├── Login.vue    # 登录页
+│   │   │   │   ├── Dashboard.vue# 大盘
+│   │   │   │   ├── Hosts.vue    # 主机 CRUD + SSH
+│   │   │   │   ├── Diagram.vue  # 架构图（Vue Flow）
+│   │   │   │   └── LogMonitor.vue# 日志监控
+│   │   │   └── components/
+│   │   │       └── ServerNode.vue # 8 Handle 自定义节点
+│   │   ├── public/              # 静态资源（favicon.ico）
+│   │   ├── index.html
+│   │   ├── vite.config.js       # 开发代理配置
+│   │   └── package.json
+│   │
+│   └── deploy/                  # 部署文件
+│       ├── Dockerfile           # 多阶段构建
+│       ├── docker-compose.yml   # 前后端容器编排
+│       └── nginx.conf           # Nginx 反向代理
 ```
 
 ## API 路由（全部通过标准库 net/http ServeMux 注册）
 
 ```
 # 认证
-POST /api/auth/login             # JWT 登录
-POST /api/auth/logout            # 登出
-GET  /api/auth/me                # 当前用户
-GET  /login                      # 登录页（豁免认证）
-GET  /                           # SPA 主页
-GET  /common/*                   # 静态文件（豁免认证）
-GET  /assets/*                   # Vite 构建产物（豁免认证）
+POST   /api/auth/login              # JWT 登录（豁免认证）
+POST   /api/auth/logout             # 登出
+GET    /api/auth/me                 # 当前用户（豁免认证，自校验 Cookie）
+PUT    /api/auth/change-password    # 修改密码（持久化到数据库）
+GET    /login                       # 登录页（豁免认证，向后兼容）
+GET    /common/*                    # 静态文件（豁免认证）
 
 # 大盘 & 主机
-GET  /api/dashboard              # 大盘数据（hosts+roles+stats）
-GET  /api/hosts                  # 主机列表
-POST /api/hosts                  # 添加主机
-POST /api/hosts/update           # 更新主机
-DELETE /api/hosts?id=xxx         # 删除主机
-POST /api/hosts/batch            # 批量添加
-POST /api/hosts/maintenance      # 维护模式切换
-GET  /api/hosts/export           # Excel 导出
+GET    /api/dashboard               # 大盘数据（hosts+roles+stats）
+GET    /api/hosts                   # 主机列表
+POST   /api/hosts                   # 添加主机
+POST   /api/hosts/update            # 更新主机
+DELETE /api/hosts?id=xxx            # 删除主机
+POST   /api/hosts/batch             # 批量添加
+POST   /api/hosts/maintenance       # 维护模式切换
+GET    /api/hosts/export            # Excel 导出
 
 # 角色
-GET  /api/roles                  # 角色列表
-POST /api/roles                  # 添加角色
-DELETE /api/roles?id=xxx         # 删除角色
-POST /api/roles/batch            # 批量添加
+GET    /api/roles                   # 角色列表
+POST   /api/roles                   # 添加角色
+DELETE /api/roles?id=xxx            # 删除角色
+POST   /api/roles/batch             # 批量添加
 
 # 分配
-POST /api/assign                 # 分配角色
+POST   /api/assign                  # 分配角色
 DELETE /api/assign?host_id=xxx&role_id=yyy  # 取消分配
-POST /api/assign/batch           # 批量分配
-GET  /api/refresh                # 手动触发探测
+POST   /api/assign/batch            # 批量分配
+GET    /api/refresh                 # 手动触发探测
 
 # SSH
-GET  /api/ssh-credential         # 凭据列表
-POST /api/ssh-credential         # 添加凭据
-DELETE /api/ssh-credential?id=xxx # 删除凭据
-WS   /api/ssh/ws                 # SSH 终端（BinaryMessage）
+GET    /api/ssh-credential          # 凭据列表
+POST   /api/ssh-credential          # 添加凭据
+DELETE /api/ssh-credential?id=xxx   # 删除凭据
+WS     /api/ssh/ws                  # SSH 终端（BinaryMessage）
 
 # 日志监控
-GET  /api/health                 # 健康检查
-GET  /api/stats                  # 统计信息
-GET  /api/es/config              # 获取 ES 配置 + 连接状态
-POST /api/es/config              # 保存 ES 配置
-GET  /api/rules                  # 告警规则列表
-POST /api/rules                  # 添加规则
-POST /api/rules/update           # 更新规则（支持部分更新）
-POST /api/rules/delete?id=xxx    # 删除规则
-GET  /api/webhook/config         # Webhook 配置列表
-POST /api/webhook/config         # 新增/更新 Webhook
-DELETE /api/webhook/config?id=1  # 删除 Webhook
-POST /api/webhook/test           # 测试 Webhook
-GET  /api/webhook/limited-alerts           # 限流缓存（内存+数据库）
-GET  /api/webhook/limited-alerts/history   # 限流历史（分页）
-POST /api/webhook/limited-alerts/clear     # 清除限流记录
-POST /api/webhook/limited-alerts/cleanup   # 清理过期记录
-WS   /ws                         # 实时日志
+GET    /api/health                  # 健康检查
+GET    /api/stats                   # 统计信息
+GET    /api/es/config               # 获取 ES 配置 + 连接状态
+POST   /api/es/config               # 保存 ES 配置
+GET    /api/rules                   # 告警规则列表
+POST   /api/rules                   # 添加规则
+POST   /api/rules/update            # 更新规则（支持部分更新）
+POST   /api/rules/delete?id=xxx     # 删除规则
+GET    /api/webhook/config          # Webhook 配置列表
+POST   /api/webhook/config          # 新增/更新 Webhook
+DELETE /api/webhook/config?id=1     # 删除 Webhook
+POST   /api/webhook/test            # 测试 Webhook
+GET    /api/webhook/limited-alerts              # 限流缓存
+GET    /api/webhook/limited-alerts/history      # 限流历史（分页）
+POST   /api/webhook/limited-alerts/clear        # 清除限流记录
+POST   /api/webhook/limited-alerts/cleanup      # 清理过期记录
+WS     /ws                          # 实时日志
 ```
 
 ## 响应格式
@@ -163,13 +175,14 @@ WS   /ws                         # 实时日志
 
 1. **标准库路由**：无第三方 Web 框架，纯 `net/http` ServeMux
 2. **SQLite 自动迁移**：首次启动自动建表，旧表通过 ALTER TABLE 补充新列（忽略错误）
-3. **ICMP 分离**：作为存活探测，不混入普通角色列表；前端 LED/Label 独立展示
-4. **认证豁免**：静态文件、登录页、健康检查路径豁免中间件校验
-5. **前端 SPA**：Vite 构建产物嵌入 Go 二进制（`//go:embed`），可通过 GOOS/GOARCH 交叉编译
-6. **SSH BinaryMessage**：WebSocket 使用 BinaryMessage 避免非 UTF-8 乱码
-7. **ESPipeline 动态控制**：ES 客户端支持运行时启动/停止
-8. **Webhook 多客户端**：每个 Webhook 独立管理，独立的限流器、模板、@配置
-9. **ES size 参数**：每次查询最大日志数通过配置控制，不在查询体中硬编码
+3. **前后端分离**：前端独立运行在 Vite 开发服务器（热更新），生产环境通过 Nginx 反向代理
+4. **ICMP 分离**：作为存活探测，不混入普通角色列表；前端 LED/Label 独立展示
+5. **认证豁免**：静态文件、登录页、健康检查、登录接口路径豁免中间件校验
+6. **密码持久化**：登录密码从数据库校验，修改密码通过 API 持久化到 SQLite
+7. **SSH BinaryMessage**：WebSocket 使用 BinaryMessage 避免非 UTF-8 乱码
+8. **ESPipeline 动态控制**：ES 客户端支持运行时启动/停止
+9. **Webhook 多客户端**：每个 Webhook 独立管理，独立的限流器、模板、@配置
+10. **ES size 参数**：每次查询最大日志数通过配置控制，不在查询体中硬编码
 
 ## Excel 导出格式
 - 单 sheet "主机列表"

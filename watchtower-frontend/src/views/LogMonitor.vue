@@ -22,18 +22,18 @@
         <div class="stat-value">{{ stats.total_sent || 0 }}</div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon" style="background:rgba(245,158,11,.12);color:#f59e0b">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        </div>
-        <div class="stat-label">令牌剩余(分钟/秒)</div>
-        <div class="stat-value">{{ stats.rate_limit_remaining ?? '-' }} / {{ stats.rate_limit_remaining_sec ?? '-' }}</div>
-      </div>
-      <div class="stat-card">
         <div class="stat-icon" style="background:rgba(34,197,94,.12);color:#22c55e">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
         </div>
         <div class="stat-label">WebSocket 连接</div>
         <div class="stat-value">{{ stats.ws_clients || 0 }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:rgba(245,158,11,.12);color:#f59e0b">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <div class="stat-label">限流缓存</div>
+        <div class="stat-value">{{ stats.buffer_used ?? '-' }}</div>
       </div>
     </div>
 
@@ -62,22 +62,30 @@
     <div v-if="subTab==='rules'">
       <div class="table-wrap">
         <table>
-          <thead><tr><th>规则名称</th><th>关键词</th><th>级别</th><th>冷却(秒)</th><th>状态</th><th>操作</th></tr></thead>
-          <tbody>
-            <tr v-for="rule in rules" :key="rule.id">
-              <td style="font-weight:600">{{ rule.name }}</td>
-              <td><span v-for="(kw,kwi) in (rule.keywords||[])" :key="kwi" class="tag tag-blue" style="margin:1px 3px 1px 0">{{ kw }}</span></td>
-              <td><span :class="'level-tag level-'+(rule.level||'info').toLowerCase()">{{ rule.level || 'info' }}</span></td>
-              <td>{{ rule.cooldown||0 }}</td>
-              <td><span :class="rule.enabled!==false?'tag tag-green':'tag tag-gray'">{{ rule.enabled!==false?'启用':'禁用' }}</span></td>
-              <td>
-                <div style="display:flex;gap:4px">
-                  <button class="btn btn-sm" :style="{color:rule.enabled!==false?'#f44336':'#4caf50',borderColor:rule.enabled!==false?'#f44336':'#4caf50'}" @click="toggleRule(rule)">{{ rule.enabled!==false?'禁用':'启用' }}</button>
-                  <button class="btn btn-sm" @click="editRule(rule)">编辑</button>
-                  <button class="btn btn-sm btn-danger" @click="deleteRule(rule)">删除</button>
-                </div>
-              </td>
-            </tr>
+            <thead><tr><th>规则名称</th><th>关键词</th><th>级别</th><th>冷却(秒)</th><th>令牌(分钟/秒)</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr v-for="rule in rules" :key="rule.id">
+                <td style="font-weight:600">{{ rule.name }}</td>
+                <td><span v-for="(kw,kwi) in (rule.keywords||[])" :key="kwi" class="tag tag-blue" style="margin:1px 3px 1px 0">{{ kw }}</span></td>
+                <td><span :class="'level-tag level-'+(rule.level||'info').toLowerCase()">{{ (rule.level || 'info').toUpperCase() }}</span></td>
+                <td>{{ rule.cooldown||0 }}</td>
+                <td style="font-size:12px;white-space:nowrap">
+                  <template v-if="rule.rate_limit_stats">
+                    <span :style="{color: rule.rate_limit_stats.remaining_minute < 1 ? '#f44336' : '#22c55e'}">{{ fmtRate(rule.rate_limit_stats.remaining_minute) }}</span>
+                    /
+                    <span :style="{color: rule.rate_limit_stats.remaining_second < 1 ? '#f44336' : '#22c55e'}">{{ fmtRate(rule.rate_limit_stats.remaining_second) }}</span>
+                  </template>
+                  <span v-else style="color:var(--text-secondary)">-</span>
+                </td>
+                <td><span :class="rule.enabled!==false?'tag tag-green':'tag tag-gray'">{{ rule.enabled!==false?'启用':'禁用' }}</span></td>
+                <td>
+                  <div style="display:flex;gap:4px">
+                    <button class="btn btn-sm" :style="{color:rule.enabled!==false?'#f44336':'#4caf50',borderColor:rule.enabled!==false?'#f44336':'#4caf50'}" @click="toggleRule(rule)">{{ rule.enabled!==false?'禁用':'启用' }}</button>
+                    <button class="btn btn-sm" @click="editRule(rule)">编辑</button>
+                    <button class="btn btn-sm btn-danger" @click="deleteRule(rule)">删除</button>
+                  </div>
+                </td>
+              </tr>
           </tbody>
         </table>
       </div>
@@ -488,20 +496,19 @@ async function saveESConfig() {
 async function loadStats() {
   try {
     const data = await api('/api/stats')
-    const rl = data.rate_limit
-    const fmtRemaining = (v) => {
-      if (v === undefined || v === null) return '-'
-      if (v === 0 && rl && rl.limit_per_minute === 0) return '无限制'
-      return Math.floor(v)
-    }
     stats.value = {
       rule_count: data.rule_count || 0,
       ws_clients: data.ws_clients || 0,
-      rate_limit_remaining: rl ? fmtRemaining(rl.remaining_minute) : '-',
-      rate_limit_remaining_sec: rl ? fmtRemaining(rl.remaining_second) : '-',
-      total_sent: rl?.total_sent || 0,
+      total_sent: data.total_sent || 0,
+      buffer_used: data.buffer_used || 0,
     }
   } catch(e) {}
+}
+
+function fmtRate(v) {
+  if (v === undefined || v === null) return '-'
+  if (v <= 0) return '0'
+  return Math.floor(v)
 }
 
 async function loadRules() {

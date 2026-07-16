@@ -327,8 +327,9 @@ th {
 td { padding: 12px 16px; font-size: 14px; border-bottom: 1px solid var(--border-color); }
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: var(--hover-bg); }
-.level-tag { display: inline-flex; padding: 2px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+.level-tag { display: inline-flex; padding: 2px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; text-transform: capitalize; }
 .level-critical { background: rgba(239,68,68,.1); color: #ef4444; }
+.level-error { background: rgba(239,68,68,.1); color: #ef4444; }
 .level-warning { background: rgba(245,158,11,.1); color: #f59e0b; }
 .level-info { background: rgba(59,130,246,.1); color: #60a5fa; }
 
@@ -430,6 +431,24 @@ tr:hover td { background: var(--hover-bg); }
 .toast-error { background: #ef4444; }
 .toast-info { background: #3b82f6; }
 @keyframes slideIn { from{transform:translateX(100%);opacity:0} to{transform:translateX(0);opacity:1} }
+
+/* Auth messages (used in Login.vue and App.vue) */
+.login-error {
+  background: #fef2f2;
+  color: #ef4444;
+  font-size: 13px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  text-align: left;
+}
+.login-success {
+  background: #f0fdf4;
+  color: #16a34a;
+  font-size: 13px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  text-align: left;
+}
 
 /* Responsive */
 @media (max-width: 1024px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }

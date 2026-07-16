@@ -1,8 +1,10 @@
 # 运行时数据
 data/
+watchtower-backend/data/
 
 # 敏感配置文件（密码、密钥、JWT Secret）
 configs/.env
+watchtower-backend/configs/.env
 
 # 操作系统
 .DS_Store
@@ -16,14 +18,15 @@ Thumbs.db
 
 # Go 编译产物
 watchtower
+watchtower-backend/watchtower
 scm
 scm-linux
 scm-darwin
 *.exe
 
 # 前端依赖和构建缓存
-frontend/node_modules/
-frontend/dist/
+watchtower-frontend/node_modules/
+watchtower-frontend/dist/
 
 # 客户端数据
 .trae/

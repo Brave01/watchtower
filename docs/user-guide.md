@@ -13,33 +13,46 @@
 
 ### 1.2 启动方式
 
+**开发模式（前后端分离）：**
+
 ```bash
 # 1. 克隆项目
 git clone <repo>
-cd watchtower
+cd server_controller_manager
 
 # 2. 配置（可选）
-# 编辑 configs/config.yaml 修改端口、ES 等配置
-# 编辑 configs/.env 设置密码和密钥
+# 编辑 watchtower-backend/configs/config.yaml 修改端口、ES 等配置
+# 编辑 watchtower-backend/configs/.env 设置密码和密钥
 
-# 3. 构建前端（如修改了 frontend/ 下的源码）
-cd frontend && npm install && npm run build && cd ..
+# 3. 启动后端（终端 1）
+cd watchtower-backend
+go build -o watchtower .
+./watchtower
 
-# 4. 编译运行
-go build -o scm .
-./scm
+# 4. 启动前端（终端 2，热更新）
+cd ../watchtower-frontend
+npm install
+npx vite --host
 
 # 5. 访问
-# 浏览器打开 http://localhost:3972
+# 浏览器打开 http://localhost:5173
 # 默认账号密码：admin / admin
+```
+
+**生产模式（Docker）：**
+
+```bash
+cd deploy
+docker compose up -d
+# 访问 http://localhost:3972
 ```
 
 ### 1.3 配置说明
 
 | 配置文件 | 路径 | 说明 |
 |---------|------|------|
-| 主配置 | `configs/config.yaml` | 端口（默认 3972）、ES 地址、探针间隔（默认 15s） |
-| 环境变量 | `configs/.env` | `ES_PASSWORD`、`AUTH_JWT_SECRET`、`ADMIN_USER`、`ADMIN_PASSWORD_HASH` |
+| 主配置 | `watchtower-backend/configs/config.yaml` | 端口（默认 3972）、ES 地址、探针间隔（默认 15s） |
+| 环境变量 | `watchtower-backend/configs/.env` | `ES_PASSWORD`、`AUTH_JWT_SECRET`、`ADMIN_USER`、`ADMIN_PASSWORD_HASH` |
 
 > `.env` 文件会在启动时自动加载，无需手动 `source`。
 
@@ -296,10 +309,19 @@ go build -o scm .
 
 ## 4. 注意事项
 
-- **首次启动**：系统自动创建管理员账号（默认 `admin` / `admin`），请及时修改密码。
+- **首次启动**：系统自动创建管理员账号（默认 `admin` / `admin`），请及时登录后在侧边栏底部点击锁图标修改密码。密码会持久化到 SQLite 数据库，重启不会丢失。
 - **ICMP 探测**：需要 `ping` 命令可用。程序会自动查找 `/sbin/ping`、`/usr/sbin/ping` 等常见路径，无需手动配置。
 - **SSH 终端**：需要目标主机已配置并开启 SSH 服务。
 - **日志监控**：需要在 Web UI 中配置 Elasticsearch 连接信息（或通过 `configs/config.yaml` + `configs/.env` 配置）。
 - **架构图数据**：存储在浏览器 localStorage 中，不同设备之间不共享，清除浏览器数据会导致架构图丢失，请及时导出 PDF 备份。
-- **前端开发**：如需修改前端代码，需在 `frontend/` 目录下开发（Vue 3 + Vite），执行 `npm run build` 构建后重启后端生效。
+- **前端构建**：如需修改前端代码，需在 `watchtower-frontend/` 目录下开发（Vue 3 + Vite），执行以下命令重新构建：
+
+```bash
+cd watchtower-frontend
+npm install
+npm run build
+# 构建产物输出到 watchtower-frontend/dist/
+```
+
+构建后使用 Docker 部署即可更新前端。
 - **告警令牌**：Webhook 限流令牌每分钟/每秒刷新，实时日志中可查看剩余令牌数。
