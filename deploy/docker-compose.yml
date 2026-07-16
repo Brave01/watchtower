@@ -10,7 +10,7 @@ services:
     container_name: watchtower-backend
     restart: always
     expose:
-      - "8080"
+      - "3972"
     volumes:
       - ./watchtower-backend/data:/app/data
       - ./watchtower-backend/configs/.env:/app/configs/.env
