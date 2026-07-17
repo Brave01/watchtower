@@ -60,6 +60,7 @@
         <div class="host-actions">
           <button class="btn btn-sm" @click="openTerminal(host)" :disabled="host.status !== 1">SSH</button>
           <button class="btn btn-sm" @click="pingHost(host)">Ping</button>
+          <button class="btn btn-sm" @click="collectHostInfo(host)">采集</button>
           <button class="btn btn-sm" @click="editHost(host)">编辑</button>
           <button class="btn btn-sm" :class="host.maintenance?'btn-success':'btn'" @click="toggleMaintenance(host)">{{ host.maintenance ? '恢复' : '维护' }}</button>
           <button class="btn btn-sm btn-danger" @click="deleteHost(host)">删除</button>
@@ -143,6 +144,14 @@
               <option v-for="r in roles" :key="r.id" :value="r.name">{{ roleDisplayName(r.name) }}</option>
             </select>
             <p style="font-size:11px;color:var(--text-secondary);margin-top:4px">当前角色: {{ roleDisplayName(formRole || '') }}</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">SSH 凭据</label>
+            <select class="form-select" v-model="formSSHCredID">
+              <option value="">使用默认凭据（第一个）</option>
+              <option v-for="c in sshCredentials" :key="c.id" :value="c.id">{{ c.label }} ({{ c.username }})</option>
+            </select>
+            <p style="font-size:11px;color:var(--text-secondary);margin-top:4px">选择 SSH 凭据用于自动采集和连接</p>
           </div>
         </div>
         <div class="modal-footer">
@@ -239,6 +248,7 @@
                     <th>主机名称</th>
                     <th>主机地址</th>
                     <th>项目</th>
+                    <th>SSH 凭据</th>
                     <th>CPU</th>
                     <th>内存</th>
                     <th>磁盘</th>
@@ -250,6 +260,12 @@
                     <td><input class="form-input" v-model="item.hostname" placeholder="web-server-01" style="font-size:13px"></td>
                     <td><input class="form-input" v-model="item.ip" placeholder="192.168.1.100" style="font-size:13px"></td>
                     <td><input class="form-input" v-model="item.project" placeholder="项目名" style="font-size:13px"></td>
+                    <td>
+                      <select class="form-select" v-model="item.ssh_credential_id" style="font-size:13px">
+                        <option value="">默认</option>
+                        <option v-for="c in sshCredentials" :key="c.id" :value="c.id">{{ c.label }}</option>
+                      </select>
+                    </td>
                     <td><input class="form-input" v-model="item.cpu" placeholder="4核" style="font-size:13px;width:70px"></td>
                     <td><input class="form-input" v-model="item.memory" placeholder="8GB" style="font-size:13px;width:70px"></td>
                     <td><input class="form-input" v-model="item.disk" placeholder="/:50G" style="font-size:13px"></td>
@@ -471,6 +487,10 @@
               <label class="form-label">私钥内容</label>
               <textarea class="form-input" v-model="sshCredPrivateKey" rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
             </div>
+            <div class="form-group">
+              <label class="form-label">端口</label>
+              <input class="form-input" v-model.number="sshCredPort" type="number" min="1" max="65535" placeholder="默认 22" />
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -537,6 +557,7 @@ const formDisk = ref([{ mount: '', size: '', unit: 'GB' }])
 const formRole = ref('')
 const origRoleName = ref('')  // 编辑时记录原始角色，用于检测变更
 const formProject = ref('')
+const formSSHCredID = ref('')
 const showProjectSuggestions = ref(false)
 const allProjects = ref([])
 
@@ -560,7 +581,7 @@ const pendingTerminalHost = ref(null)
 
 // Batch Add Hosts
 const showBatchHostModal = ref(false)
-const batchHostItems = ref([{ hostname: '', ip: '', cpu: '', memory: '', disk: '' }])
+const batchHostItems = ref([{ hostname: '', ip: '', project: '', ssh_credential_id: '', cpu: '', memory: '', disk: '' }])
 
 // Add Role
 const showAddRoleModal = ref(false)
@@ -588,6 +609,7 @@ const sshCredUsername = ref('')
 const sshCredAuthMethod = ref('password')
 const sshCredPassword = ref('')
 const sshCredPrivateKey = ref('')
+const sshCredPort = ref(22)
 
 // Role Management
 const showRoleManageModal = ref(false)
@@ -641,6 +663,7 @@ function closeModal() {
   formRole.value = ''
   origRoleName.value = ''
   formProject.value = ''
+  formSSHCredID.value = ''
   showProjectSuggestions.value = false
 }
 
@@ -729,6 +752,7 @@ async function saveHost() {
     ip: formAddr.value,
     hostname: formName.value || formAddr.value,
     project: formProject.value || '',
+    ssh_credential_id: formSSHCredID.value || '',
     cpu: formCPU.value || '',
     memory: formMemory.value || '',
     disk: diskParts,
@@ -771,6 +795,7 @@ async function saveHost() {
     }
   } else {
     await api('/api/hosts', { method: 'POST', body: JSON.stringify(body) })
+    showToast('主机已添加，后台正在采集信息...', 'success')
   }
   closeModal()
   await loadHosts()
@@ -781,6 +806,7 @@ function editHost(host) {
   formAddr.value = host.ip || ''
   formName.value = host.hostname || ''
   formProject.value = host.project || ''
+  formSSHCredID.value = host.ssh_credential_id || ''
   formCPU.value = host.cpu || ''
   formMemory.value = host.memory || ''
   formRole.value = (host.roles && host.roles.length > 0) ? host.roles[0] : ''
@@ -822,6 +848,15 @@ async function unbindRole(host, roleName) {
   } catch(e) { showToast('解除失败: ' + e.message, 'error') }
 }
 
+async function collectHostInfo(host) {
+  try {
+    await api('/api/hosts/collect', { method: 'POST', body: JSON.stringify({ host_id: host.id }) })
+    showToast('已触发采集任务，请稍后刷新查看结果', 'success')
+    // 5 秒后自动刷新
+    setTimeout(loadHosts, 5000)
+  } catch(e) { showToast('采集触发失败: ' + e.message, 'error') }
+}
+
 async function pingHost(host) {
   try {
     await api('/api/refresh')
@@ -853,7 +888,7 @@ function removeBatchHost(idx) {
 async function submitBatchHosts() {
   const valid = batchHostItems.value.filter(h => h.hostname && h.ip)
   if (valid.length === 0) { showToast('请填写至少一条有效的主机数据', 'error'); return }
-  const hostList = valid.map(h => ({ hostname: h.hostname, ip: h.ip, project: h.project || '', cpu: h.cpu || '', memory: h.memory || '', disk: h.disk || '' }))
+  const hostList = valid.map(h => ({ hostname: h.hostname, ip: h.ip, project: h.project || '', ssh_credential_id: h.ssh_credential_id || '', cpu: h.cpu || '', memory: h.memory || '', disk: h.disk || '' }))
   await api('/api/hosts/batch', { method: 'POST', body: JSON.stringify({ hosts: hostList }) })
   showBatchHostModal.value = false
   showToast('批量添加 ' + valid.length + ' 台主机完成', 'success')
@@ -976,7 +1011,7 @@ async function loadSSHCredentials() {
 }
 async function submitSSHCred() {
   if (!sshCredLabel.value || !sshCredUsername.value) { showToast('标签和用户名不能为空', 'error'); return }
-  const body = { label: sshCredLabel.value, username: sshCredUsername.value, auth_method: sshCredAuthMethod.value }
+  const body = { label: sshCredLabel.value, username: sshCredUsername.value, auth_method: sshCredAuthMethod.value, port: sshCredPort.value || 22 }
   if (sshCredAuthMethod.value === 'password') {
     body.password = sshCredPassword.value
   } else {
@@ -1088,8 +1123,10 @@ async function initTerminal() {
 function connectWithCred(credId) {
   if (!terminalHost.value) return
   disconnectTerminal()
+  // 优先通过后端端口连接，避免 Vite 代理 WebSocket 问题
+  const wsBase = location.port === '3972' ? '' : ':3972'
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsUrl = proto + '//' + location.host + '/api/ssh/ws?host_id=' + encodeURIComponent(terminalHost.value.id) + '&host=' + encodeURIComponent(terminalHost.value.ip) + '&port=22&cred_id=' + encodeURIComponent(credId)
+  const wsUrl = proto + '//' + location.hostname + wsBase + '/api/ssh/ws?host_id=' + encodeURIComponent(terminalHost.value.id) + '&cred_id=' + encodeURIComponent(credId)
   try {
     termSocket = new WebSocket(wsUrl)
     termSocket.binaryType = 'arraybuffer'
@@ -1111,8 +1148,9 @@ function connectWithCred(credId) {
 function connectTerminal() {
   if (!terminalHost.value) return
   disconnectTerminal()
+  const wsBase = location.port === '3972' ? '' : ':3972'
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsUrl = proto + '//' + location.host + '/api/ssh/ws?host_id=' + encodeURIComponent(terminalHost.value.id) + '&host=' + encodeURIComponent(terminalHost.value.ip) + '&port=22&user=' + encodeURIComponent(termUser.value) + '&pass=' + encodeURIComponent(termPass.value)
+  const wsUrl = proto + '//' + location.hostname + wsBase + '/api/ssh/ws?host_id=' + encodeURIComponent(terminalHost.value.id)
   try {
     termSocket = new WebSocket(wsUrl)
     termSocket.binaryType = 'arraybuffer'
@@ -1157,6 +1195,7 @@ function closeTerminal() {
 onMounted(() => {
   loadHosts()
   loadRoles()
+  loadSSHCredentials()
 })
 onUnmounted(() => { disconnectTerminal(); if (terminal) { terminal.dispose(); terminal = null } })
 </script>

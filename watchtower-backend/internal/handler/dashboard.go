@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -26,6 +27,7 @@ func RegisterDashboard(mux *http.ServeMux, deps *DashboardDeps) {
 	mux.HandleFunc("/api/hosts/batch", handleBatchHosts(deps))
 	mux.HandleFunc("/api/hosts/export", handleExport(deps))
 	mux.HandleFunc("/api/hosts/maintenance", handleMaintenance(deps))
+	mux.HandleFunc("/api/hosts/collect", handleCollect(deps))
 	mux.HandleFunc("/api/roles", handleRoles(deps))
 	mux.HandleFunc("/api/roles/batch", handleBatchRoles(deps))
 	mux.HandleFunc("/api/assign", handleAssign(deps))
@@ -137,12 +139,13 @@ func handleHosts(deps *DashboardDeps) http.HandlerFunc {
 		switch r.Method {
 		case http.MethodPost:
 			var req struct {
-				IP       string `json:"ip"`
-				Hostname string `json:"hostname"`
-				Project  string `json:"project"`
-				CPU      string `json:"cpu"`
-				Memory   string `json:"memory"`
-				Disk     string `json:"disk"`
+				IP              string `json:"ip"`
+				Hostname        string `json:"hostname"`
+				Project         string `json:"project"`
+				SSHCredentialID string `json:"ssh_credential_id"`
+				CPU             string `json:"cpu"`
+				Memory          string `json:"memory"`
+				Disk            string `json:"disk"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "无效 JSON: " + err.Error()})
@@ -153,14 +156,15 @@ func handleHosts(deps *DashboardDeps) http.HandlerFunc {
 				return
 			}
 			host := &store.Host{
-				ID:       uuid.New().String(),
-				IP:       req.IP,
-				Hostname: req.Hostname,
-				Project:  req.Project,
-				CPU:      req.CPU,
-				Memory:   req.Memory,
-				Disk:     req.Disk,
-				Status:   store.HostStatusUnknown,
+				ID:              uuid.New().String(),
+				IP:              req.IP,
+				Hostname:        req.Hostname,
+				Project:         req.Project,
+				SSHCredentialID: req.SSHCredentialID,
+				CPU:             req.CPU,
+				Memory:          req.Memory,
+				Disk:            req.Disk,
+				Status:          store.HostStatusUnknown,
 			}
 			if err := deps.Store.AddHost(host); err != nil {
 				writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
@@ -178,6 +182,26 @@ func handleHosts(deps *DashboardDeps) http.HandlerFunc {
 			if deps.Scheduler != nil {
 				go deps.Scheduler.ProbeHost(host.ID)
 			}
+			// 异步触发信息采集
+			go func() {
+				results := dashboard.CollectHosts([]store.Host{*host}, deps.Store)
+				if len(results) > 0 && results[0].Success {
+					r := results[0]
+					if r.Hostname != "" {
+						host.Hostname = r.Hostname
+					}
+					if r.CPU != "" {
+						host.CPU = r.CPU
+					}
+					if r.Memory != "" {
+						host.Memory = r.Memory
+					}
+					if r.Disk != "" {
+						host.Disk = r.Disk
+					}
+					deps.Store.UpdateHost(host)
+				}
+			}()
 			writeJSON(w, http.StatusCreated, apiResponse{Success: true, Message: "主机已添加", Data: host})
 
 		case http.MethodGet:
@@ -254,13 +278,14 @@ func handleHostUpdate(deps *DashboardDeps) http.HandlerFunc {
 			return
 		}
 		var req struct {
-			ID       string `json:"id"`
-			IP       string `json:"ip"`
-			Hostname string `json:"hostname"`
-			Project  string `json:"project"`
-			CPU      string `json:"cpu"`
-			Memory   string `json:"memory"`
-			Disk     string `json:"disk"`
+			ID              string `json:"id"`
+			IP              string `json:"ip"`
+			Hostname        string `json:"hostname"`
+			Project         string `json:"project"`
+			SSHCredentialID string `json:"ssh_credential_id"`
+			CPU             string `json:"cpu"`
+			Memory          string `json:"memory"`
+			Disk            string `json:"disk"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "无效 JSON: " + err.Error()})
@@ -279,6 +304,9 @@ func handleHostUpdate(deps *DashboardDeps) http.HandlerFunc {
 		}
 		if req.Project != "" {
 			host.Project = req.Project
+		}
+		if req.SSHCredentialID != "" {
+			host.SSHCredentialID = req.SSHCredentialID
 		}
 		if req.CPU != "" {
 			host.CPU = req.CPU
@@ -306,12 +334,13 @@ func handleBatchHosts(deps *DashboardDeps) http.HandlerFunc {
 		}
 		var req struct {
 			Hosts []struct {
-				Hostname string `json:"hostname"`
-				IP       string `json:"ip"`
-				Project  string `json:"project"`
-				CPU      string `json:"cpu"`
-				Memory   string `json:"memory"`
-				Disk     string `json:"disk"`
+				Hostname        string `json:"hostname"`
+				IP              string `json:"ip"`
+				Project         string `json:"project"`
+				SSHCredentialID string `json:"ssh_credential_id"`
+				CPU             string `json:"cpu"`
+				Memory          string `json:"memory"`
+				Disk            string `json:"disk"`
 			} `json:"hosts"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -326,14 +355,15 @@ func handleBatchHosts(deps *DashboardDeps) http.HandlerFunc {
 				continue
 			}
 			host := &store.Host{
-				ID:       uuid.New().String(),
-				IP:       hr.IP,
-				Hostname: hr.Hostname,
-				Project:  hr.Project,
-				CPU:      hr.CPU,
-				Memory:   hr.Memory,
-				Disk:     hr.Disk,
-				Status:   store.HostStatusUnknown,
+				ID:              uuid.New().String(),
+				IP:              hr.IP,
+				Hostname:        hr.Hostname,
+				Project:         hr.Project,
+				SSHCredentialID: hr.SSHCredentialID,
+				CPU:             hr.CPU,
+				Memory:          hr.Memory,
+				Disk:            hr.Disk,
+				Status:          store.HostStatusUnknown,
 			}
 			if err := deps.Store.AddHost(host); err != nil {
 				errors = append(errors, hr.Hostname+": "+err.Error())
@@ -671,6 +701,78 @@ func handleRefresh(deps *DashboardDeps) http.HandlerFunc {
 			deps.Scheduler.Trigger()
 		}
 		writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "探测已触发"})
+	}
+}
+
+// ---------- POST /api/hosts/collect ----------
+func handleCollect(deps *DashboardDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false})
+			return
+		}
+		var req struct {
+			HostID string `json:"host_id"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+
+		hosts, err := deps.Store.ListHosts()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: "获取主机列表失败: " + err.Error()})
+			return
+		}
+
+		// 按 host_id 过滤
+		var targetHosts []store.Host
+		if req.HostID != "" {
+			for _, h := range hosts {
+				if h.ID == req.HostID {
+					targetHosts = append(targetHosts, h)
+					break
+				}
+			}
+			if len(targetHosts) == 0 {
+				writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "主机不存在"})
+				return
+			}
+		} else {
+			targetHosts = hosts
+		}
+
+		// 异步执行采集
+		go func() {
+			results := dashboard.CollectHosts(targetHosts, deps.Store)
+			for _, res := range results {
+				if !res.Success {
+					log.Printf("[Collect] 主机 %s 采集失败: %s", res.HostID, res.Error)
+					continue
+				}
+				host, err := deps.Store.GetHost(res.HostID)
+				if err != nil || host == nil {
+					continue
+				}
+				if res.Hostname != "" {
+					host.Hostname = res.Hostname
+				}
+				if res.CPU != "" {
+					host.CPU = res.CPU
+				}
+				if res.Memory != "" {
+					host.Memory = res.Memory
+				}
+				if res.Disk != "" {
+					host.Disk = res.Disk
+				}
+				if err := deps.Store.UpdateHost(host); err != nil {
+					log.Printf("[Collect] 主机 %s 更新失败: %v", res.HostID, err)
+				} else {
+					log.Printf("[Collect] 主机 %s 采集更新完成 (hostname=%s cpu=%s mem=%s disk=%s)",
+						res.HostID, res.Hostname, res.CPU, res.Memory, res.Disk)
+				}
+			}
+		}()
+
+		writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "采集任务已触发", Data: map[string]int{"count": len(targetHosts)}})
 	}
 }
 

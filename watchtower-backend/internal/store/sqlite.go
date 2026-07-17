@@ -82,6 +82,7 @@ func (s *SQLiteStore) migrate() error {
 			disk TEXT DEFAULT "",
 			status INTEGER DEFAULT 0,
 			maintenance INTEGER DEFAULT 0,
+			ssh_credential_id TEXT DEFAULT "",
 			last_check_time TEXT DEFAULT ""
 		)`,
 		`CREATE TABLE IF NOT EXISTS roles (
@@ -106,11 +107,12 @@ func (s *SQLiteStore) migrate() error {
 		)`,
 		`CREATE TABLE IF NOT EXISTS ssh_credentials (
 			id TEXT PRIMARY KEY,
-			label TEXT DEFAULT "",
+			label TEXT NOT NULL,
 			username TEXT NOT NULL,
-			auth_method TEXT NOT NULL,
+			auth_method TEXT DEFAULT "password",
 			password TEXT DEFAULT "",
-			private_key TEXT DEFAULT ""
+			private_key TEXT DEFAULT "",
+			port INTEGER DEFAULT 22
 		)`,
 		`CREATE TABLE IF NOT EXISTS users (
 			username TEXT PRIMARY KEY,
@@ -144,6 +146,8 @@ func (s *SQLiteStore) migrate() error {
 		"ALTER TABLE alert_rules ADD COLUMN webhook_id INTEGER DEFAULT 0",
 		"ALTER TABLE es_config ADD COLUMN size INTEGER DEFAULT 100",
 		"ALTER TABLE hosts ADD COLUMN project TEXT DEFAULT ''",
+		"ALTER TABLE hosts ADD COLUMN ssh_credential_id TEXT DEFAULT ''",
+		"ALTER TABLE ssh_credentials ADD COLUMN port INTEGER DEFAULT 22",
 	}
 	for _, sql := range alterTableMigrations {
 		s.db.Exec(sql) // 忽略错误（列已存在时会报错）
@@ -322,7 +326,7 @@ func (s *SQLiteStore) DeleteOldLimitedAlerts(before time.Time) (int64, error) {
 	return res.RowsAffected()
 }
 func (s *SQLiteStore) ListHosts() ([]Host, error) {
-	rows, err := s.db.Query("SELECT id, ip, hostname, project, cpu, memory, disk, status, maintenance, last_check_time FROM hosts")
+	rows, err := s.db.Query("SELECT id, ip, hostname, project, cpu, memory, disk, status, maintenance, ssh_credential_id, last_check_time FROM hosts")
 	if err != nil {
 		return nil, err
 	}
@@ -332,7 +336,7 @@ func (s *SQLiteStore) ListHosts() ([]Host, error) {
 		var h Host
 		var maint int
 		var lct string
-		if err := rows.Scan(&h.ID, &h.IP, &h.Hostname, &h.Project, &h.CPU, &h.Memory, &h.Disk, &h.Status, &maint, &lct); err != nil {
+		if err := rows.Scan(&h.ID, &h.IP, &h.Hostname, &h.Project, &h.CPU, &h.Memory, &h.Disk, &h.Status, &maint, &h.SSHCredentialID, &lct); err != nil {
 			return nil, err
 		}
 		h.Maintenance = maint != 0
@@ -347,7 +351,7 @@ func (s *SQLiteStore) GetHost(id string) (*Host, error) {
 	var h Host
 	var maint int
 	var lct string
-	err := s.db.QueryRow("SELECT id, ip, hostname, project, cpu, memory, disk, status, maintenance, last_check_time FROM hosts WHERE id = ?", id).Scan(&h.ID, &h.IP, &h.Hostname, &h.Project, &h.CPU, &h.Memory, &h.Disk, &h.Status, &maint, &lct)
+	err := s.db.QueryRow("SELECT id, ip, hostname, project, cpu, memory, disk, status, maintenance, ssh_credential_id, last_check_time FROM hosts WHERE id = ?", id).Scan(&h.ID, &h.IP, &h.Hostname, &h.Project, &h.CPU, &h.Memory, &h.Disk, &h.Status, &maint, &h.SSHCredentialID, &lct)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -365,7 +369,7 @@ func (s *SQLiteStore) AddHost(h *Host) error {
 	if !h.LastCheckTime.IsZero() {
 		lct = h.LastCheckTime.Format("2006-01-02 15:04:05")
 	}
-	_, err := s.db.Exec("INSERT INTO hosts (id, ip, hostname, project, cpu, memory, disk, status, maintenance, last_check_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", h.ID, h.IP, h.Hostname, h.Project, h.CPU, h.Memory, h.Disk, h.Status, BoolToInt(h.Maintenance), lct)
+	_, err := s.db.Exec("INSERT INTO hosts (id, ip, hostname, project, cpu, memory, disk, status, maintenance, ssh_credential_id, last_check_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", h.ID, h.IP, h.Hostname, h.Project, h.CPU, h.Memory, h.Disk, h.Status, BoolToInt(h.Maintenance), h.SSHCredentialID, lct)
 	return err
 }
 func (s *SQLiteStore) UpdateHost(h *Host) error {
@@ -373,8 +377,8 @@ func (s *SQLiteStore) UpdateHost(h *Host) error {
 	if !h.LastCheckTime.IsZero() {
 		lct = h.LastCheckTime.Format("2006-01-02 15:04:05")
 	}
-	_, err := s.db.Exec("UPDATE hosts SET ip=?, hostname=?, project=?, cpu=?, memory=?, disk=?, status=?, maintenance=?, last_check_time=? WHERE id=?",
-		h.IP, h.Hostname, h.Project, h.CPU, h.Memory, h.Disk, h.Status, BoolToInt(h.Maintenance), lct, h.ID)
+	_, err := s.db.Exec("UPDATE hosts SET ip=?, hostname=?, project=?, cpu=?, memory=?, disk=?, status=?, maintenance=?, ssh_credential_id=?, last_check_time=? WHERE id=?",
+		h.IP, h.Hostname, h.Project, h.CPU, h.Memory, h.Disk, h.Status, BoolToInt(h.Maintenance), h.SSHCredentialID, lct, h.ID)
 	return err
 }
 func (s *SQLiteStore) UpdateHostStatus(id string, status int, checkTime time.Time) error {
@@ -504,7 +508,7 @@ func (s *SQLiteStore) UpdateAssignmentConsecutiveFailures(hostID, roleID string,
 	return err
 }
 func (s *SQLiteStore) ListSSHCredentials() ([]SSHCredential, error) {
-	rows, err := s.db.Query("SELECT id, label, username, auth_method, password, private_key FROM ssh_credentials")
+	rows, err := s.db.Query("SELECT id, label, username, auth_method, password, private_key, port FROM ssh_credentials")
 	if err != nil {
 		return nil, err
 	}
@@ -512,7 +516,7 @@ func (s *SQLiteStore) ListSSHCredentials() ([]SSHCredential, error) {
 	var creds []SSHCredential
 	for rows.Next() {
 		var c SSHCredential
-		if err := rows.Scan(&c.ID, &c.Label, &c.Username, &c.AuthMethod, &c.Password, &c.PrivateKey); err != nil {
+		if err := rows.Scan(&c.ID, &c.Label, &c.Username, &c.AuthMethod, &c.Password, &c.PrivateKey, &c.Port); err != nil {
 			return nil, err
 		}
 		creds = append(creds, c)
@@ -521,7 +525,7 @@ func (s *SQLiteStore) ListSSHCredentials() ([]SSHCredential, error) {
 }
 func (s *SQLiteStore) GetSSHCredential(id string) (*SSHCredential, error) {
 	var c SSHCredential
-	err := s.db.QueryRow("SELECT id, label, username, auth_method, password, private_key FROM ssh_credentials WHERE id = ?", id).Scan(&c.ID, &c.Label, &c.Username, &c.AuthMethod, &c.Password, &c.PrivateKey)
+	err := s.db.QueryRow("SELECT id, label, username, auth_method, password, private_key, port FROM ssh_credentials WHERE id = ?", id).Scan(&c.ID, &c.Label, &c.Username, &c.AuthMethod, &c.Password, &c.PrivateKey, &c.Port)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -534,7 +538,10 @@ func (s *SQLiteStore) AddSSHCredential(c *SSHCredential) (string, error) {
 	if c.ID == "" {
 		c.ID = uuid.New().String()
 	}
-	_, err := s.db.Exec("INSERT INTO ssh_credentials (id, label, username, auth_method, password, private_key) VALUES (?, ?, ?, ?, ?, ?)", c.ID, c.Label, c.Username, c.AuthMethod, c.Password, c.PrivateKey)
+	if c.Port == 0 {
+		c.Port = 22
+	}
+	_, err := s.db.Exec("INSERT INTO ssh_credentials (id, label, username, auth_method, password, private_key, port) VALUES (?, ?, ?, ?, ?, ?, ?)", c.ID, c.Label, c.Username, c.AuthMethod, c.Password, c.PrivateKey, c.Port)
 	return c.ID, err
 }
 func (s *SQLiteStore) DeleteSSHCredential(id string) error {

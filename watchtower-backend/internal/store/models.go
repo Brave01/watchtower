@@ -20,16 +20,17 @@ type AlertRule struct {
 	UpdatedAt       string `json:"updated_at"`
 }
 type Host struct {
-	ID            string    `json:"id"`
-	IP            string    `json:"ip"`
-	Hostname      string    `json:"hostname"`
-	Project       string    `json:"project"`
-	CPU           string    `json:"cpu"`
-	Memory        string    `json:"memory"`
-	Disk          string    `json:"disk"`
-	Status        int       `json:"status"`
-	Maintenance   bool      `json:"maintenance"`
-	LastCheckTime time.Time `json:"last_check_time"`
+	ID              string    `json:"id"`
+	IP              string    `json:"ip"`
+	Hostname        string    `json:"hostname"`
+	Project         string    `json:"project"`
+	CPU             string    `json:"cpu"`
+	Memory          string    `json:"memory"`
+	Disk            string    `json:"disk"`
+	Status          int       `json:"status"`
+	Maintenance     bool      `json:"maintenance"`
+	SSHCredentialID string    `json:"ssh_credential_id"`
+	LastCheckTime   time.Time `json:"last_check_time"`
 }
 
 type Role struct {
@@ -61,6 +62,7 @@ type SSHCredential struct {
 	AuthMethod string `json:"auth_method"`
 	Password   string `json:"password,omitempty"`
 	PrivateKey string `json:"private_key,omitempty"`
+	Port       int    `json:"port"`
 }
 type User struct {
 	Username     string `json:"username"`

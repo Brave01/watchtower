@@ -63,17 +63,21 @@ func HandleSSHWebSocket(st store.Store) http.HandlerFunc {
 			return
 		}
 
-		port := resolveSSHPort(st, hostID)
-
+		port := 22
 		credID := r.URL.Query().Get("cred_id")
 		var auth *sshAuthInfo
 
 		if credID != "" {
 			cred, err := st.GetSSHCredential(credID)
 			if err != nil || cred == nil {
+				log.Printf("[SSH-WS] cred_id=%s 凭据不存在: %v", credID, err)
 				writeWS(conn, "error: 凭据不存在，请重新选择")
 				return
 			}
+			if cred.Port > 0 {
+				port = cred.Port
+			}
+			log.Printf("[SSH-WS] 使用凭据 %s, user=%s, method=%s, port=%d, host=%s", credID, cred.Username, cred.AuthMethod, port, host.IP)
 			auth = &sshAuthInfo{
 				Type:       "cred_id",
 				CredID:     credID,
@@ -83,6 +87,15 @@ func HandleSSHWebSocket(st store.Store) http.HandlerFunc {
 				PrivateKey: cred.PrivateKey,
 			}
 		} else {
+			// 没有cred_id时尝试URL port或自动解析
+			portStr := r.URL.Query().Get("port")
+			if portStr != "" {
+				if p, err := strconv.Atoi(portStr); err == nil && p > 0 && p <= 65535 {
+					port = p
+				}
+			} else {
+				port = resolveSSHPort(st, hostID)
+			}
 			writeWS(conn, "\x1b[33m等待认证...\x1b[0m")
 			_, msg, err := conn.ReadMessage()
 			if err != nil {
@@ -111,11 +124,14 @@ func HandleSSHWebSocket(st store.Store) http.HandlerFunc {
 			auth = &incoming
 		}
 
+		log.Printf("[SSH-WS] 正在连接 %s:%d (user=%s, method=%s)", host.IP, port, auth.Username, auth.AuthMethod)
 		sshSession, err := startSSHSession(host.IP, port, auth)
 		if err != nil {
+			log.Printf("[SSH-WS] 连接失败: %v", err)
 			writeWS(conn, "error: "+err.Error())
 			return
 		}
+		log.Printf("[SSH-WS] 连接成功 %s:%d", host.IP, port)
 		defer sshSession.client.Close()
 		defer sshSession.session.Close()
 
