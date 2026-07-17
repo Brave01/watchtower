@@ -191,12 +191,14 @@ func (h *LogMonitorHandler) HandleWebhookConfig(w http.ResponseWriter, r *http.R
 		if configs == nil {
 			configs = []model.WebhookConfig{}
 		}
+		log.Printf("[Webhook] 查询配置: 共 %d 条", len(configs))
 		json.NewEncoder(w).Encode(map[string]interface{}{"webhooks": configs})
 		return
 	}
 	if r.Method == "POST" {
 		var cfg model.WebhookConfig
 		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+			log.Printf("[Webhook] 保存失败: 请求体解析失败: %s", err)
 			http.Error(w, "bad request", 400)
 			return
 		}
@@ -216,6 +218,7 @@ func (h *LogMonitorHandler) HandleWebhookConfig(w http.ResponseWriter, r *http.R
 					RingBufferSize:     cfg.RingBufferSize,
 					Template:           cfg.Template,
 				})
+				log.Printf("[Webhook] 配置已更新: id=%d, name=%s, url=%s, enabled=%v", cfg.ID, cfg.Name, cfg.URL, cfg.Enabled)
 			} else {
 				client := webhook.NewClient(&webhook.WebhookConfig{
 					Platform:           cfg.Platform,
@@ -231,7 +234,10 @@ func (h *LogMonitorHandler) HandleWebhookConfig(w http.ResponseWriter, r *http.R
 					Template:           cfg.Template,
 				})
 				h.webhookClients[cfg.ID] = client
+				log.Printf("[Webhook] 配置已创建: id=%d, name=%s, url=%s, enabled=%v", cfg.ID, cfg.Name, cfg.URL, cfg.Enabled)
 			}
+		} else {
+			log.Printf("[Webhook] 配置已保存: id=%d, name=%s (未加载到内存，webhookClients=nil)", cfg.ID, cfg.Name)
 		}
 		json.NewEncoder(w).Encode(map[string]interface{}{"message": "ok", "id": cfg.ID})
 		return
@@ -247,9 +253,13 @@ func (h *LogMonitorHandler) HandleWebhookConfig(w http.ResponseWriter, r *http.R
 		fmt.Sscanf(idStr, "%d", &id)
 		h.store.DeleteWebhookConfig(id)
 		if h.webhookClients != nil {
-			delete(h.webhookClients, id)
+			if _, ok := h.webhookClients[id]; ok {
+				delete(h.webhookClients, id)
+				log.Printf("[Webhook] 配置已删除: id=%d", id)
+			}
 		}
 		json.NewEncoder(w).Encode(map[string]string{"message": "deleted"})
+		log.Printf("[Webhook] 配置已从 DB 删除: id=%d", id)
 		return
 	}
 	http.Error(w, "method not allowed", 405)
@@ -276,12 +286,8 @@ func (h *LogMonitorHandler) HandleWebhookTest(w http.ResponseWriter, r *http.Req
 		return
 	}
 	var client *webhook.Client
-	if req.WebhookID > 0 && h.webhookClients != nil {
-		if c, ok := h.webhookClients[req.WebhookID]; ok {
-			client = c
-		}
-	}
-	if client == nil && req.URL != "" {
+	// 测试请求：优先用传入的参数创建临时客户端，忽略 DB 中 enabled 状态
+	if req.URL != "" {
 		platform := req.Platform
 		if platform == "" {
 			platform = "feishu"
@@ -291,7 +297,13 @@ func (h *LogMonitorHandler) HandleWebhookTest(w http.ResponseWriter, r *http.Req
 			URL:      req.URL,
 			Secret:   req.Secret,
 			Enabled:  true,
+			Template: req.Template,
 		})
+	}
+	if client == nil && req.WebhookID > 0 && h.webhookClients != nil {
+		if c, ok := h.webhookClients[req.WebhookID]; ok {
+			client = c
+		}
 	}
 	if client == nil {
 		client = h.webhook

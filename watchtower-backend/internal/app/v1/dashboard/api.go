@@ -340,6 +340,46 @@ func (h *DashboardHandler) HandleBatchHosts(w http.ResponseWriter, r *http.Reque
 		}
 		results = append(results, host)
 	}
+	// 对有 SSH 凭据的主机触发采集
+	hasCredentialHosts := make([]model.Host, 0)
+	for _, h := range results {
+		if h.SSHCredentialID != "" {
+			hasCredentialHosts = append(hasCredentialHosts, *h)
+		}
+	}
+	if len(hasCredentialHosts) > 0 {
+		go func(hosts []model.Host) {
+			results := dashboard.CollectHosts(hosts, h.store)
+			for _, res := range results {
+				if !res.Success {
+					log.Printf("[Collect] 批量添加-主机 %s(%s) 采集失败: %s", res.HostID, res.Hostname, res.Error)
+					continue
+				}
+				host, err := h.store.GetHost(res.HostID)
+				if err != nil || host == nil {
+					continue
+				}
+				if res.Hostname != "" {
+					host.Hostname = res.Hostname
+				}
+				if res.CPU != "" {
+					host.CPU = res.CPU
+				}
+				if res.Memory != "" {
+					host.Memory = res.Memory
+				}
+				if res.Disk != "" {
+					host.Disk = res.Disk
+				}
+				if err := h.store.UpdateHost(host); err != nil {
+					log.Printf("[Collect] 批量添加-主机 %s 更新失败: %v", res.HostID, err)
+				} else {
+					log.Printf("[Collect] 批量添加-主机 %s 采集完成 (hostname=%s cpu=%s mem=%s disk=%s)",
+						res.HostID, res.Hostname, res.CPU, res.Memory, res.Disk)
+				}
+			}
+		}(hasCredentialHosts)
+	}
 	resp := map[string]interface{}{
 		"count":  len(results),
 		"hosts":  results,
@@ -816,7 +856,7 @@ func (h *DashboardHandler) HandleExport(w http.ResponseWriter, r *http.Request) 
 		var roleNames []string
 		for _, a := range assignments {
 			if a.HostID == hst.ID {
-				if role, ok := roleMap[a.RoleID]; ok {
+				if role, ok := roleMap[a.RoleID]; ok && role.Type != model.ProbeTypeICMP {
 					roleNames = append(roleNames, role.Name)
 				}
 			}

@@ -16,9 +16,15 @@ import (
 	"watchtower/internal/app/v1/user"
 	"watchtower/internal/core"
 	dashpkg "watchtower/internal/dashboard"
+	"watchtower/internal/logmonitor/dedup"
+	"watchtower/internal/logmonitor/filter"
+	"watchtower/internal/logmonitor/parser"
+	"watchtower/internal/logmonitor/webhook"
+	ws "watchtower/internal/logmonitor/ws"
 	"watchtower/internal/middleware"
 	"watchtower/internal/model"
 	"watchtower/internal/store"
+	"watchtower/pkg/utils"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -128,11 +134,113 @@ func initApp(ctx context.Context, cfg *core.Config, st *store.SQLiteStore, secre
 }
 
 func initLogMonitor(ctx context.Context, cfg *core.Config, st *store.SQLiteStore) *logmonitor.LogMonitorHandler {
-	return &logmonitor.LogMonitorHandler{}
+	// 日志解析器
+	logParser := parser.NewParser()
+
+	// WebSocket Hub
+	wsHub := ws.New()
+
+	// 从 DB 加载告警规则初始化过滤引擎
+	filterRules := make([]*filter.AlertRule, 0)
+	dbRules, err := st.ListAlertRules()
+	if err != nil {
+		log.Printf("[LogMonitor] 加载告警规则失败: %v", err)
+	} else {
+		for _, r := range dbRules {
+			filterRules = append(filterRules, &filter.AlertRule{
+				ID:              r.ID,
+				Name:            r.Name,
+				Enabled:         r.Enabled,
+				Keywords:        utils.SplitStrings(r.Keywords),
+				ExcludeKeywords: utils.SplitStrings(r.ExcludeKeywords),
+				Level:           r.Level,
+				RegexPattern:    r.RegexPattern,
+				Cooldown:        r.Cooldown,
+				MessageTemplate: r.MessageTemplate,
+				WebhookID:       r.WebhookID,
+			})
+		}
+	}
+	filterEngine := filter.NewEngine(logParser)
+
+	// 将 DB 中的规则加载到过滤引擎
+	for _, r := range dbRules {
+		filterEngine.AddRule(&filter.AlertRule{
+			ID:              r.ID,
+			Name:            r.Name,
+			Enabled:         r.Enabled,
+			Keywords:        utils.SplitStrings(r.Keywords),
+			ExcludeKeywords: utils.SplitStrings(r.ExcludeKeywords),
+			Level:           r.Level,
+			RegexPattern:    r.RegexPattern,
+			Cooldown:        r.Cooldown,
+			MessageTemplate: r.MessageTemplate,
+			WebhookID:       r.WebhookID,
+		})
+	}
+
+	// Webhook 客户端
+	webhookConfigs, _ := st.ListWebhookConfigs()
+	webhookClients := make(map[int]*webhook.Client)
+	defaultWebhook := webhook.NewClient(&webhook.WebhookConfig{
+		Platform:   "feishu",
+		URL:        cfg.LogMonitor.FeishuWebhook.URL,
+		MaxRetries: cfg.LogMonitor.FeishuWebhook.MaxRetries,
+		Enabled:    cfg.LogMonitor.FeishuWebhook.URL != "",
+	})
+	for _, wc := range webhookConfigs {
+		client := webhook.NewClient(&webhook.WebhookConfig{
+			Platform:           wc.Platform,
+			URL:                wc.URL,
+			Secret:             wc.Secret,
+			Enabled:            wc.Enabled,
+			MaxRetries:         wc.MaxRetries,
+			MentionType:        wc.MentionType,
+			MentionUsers:       utils.SplitComma(wc.MentionUsers),
+			RateLimit:          wc.RateLimit,
+			RateLimitPerSecond: wc.RateLimitPerSecond,
+			RingBufferSize:     wc.RingBufferSize,
+			Template:           wc.Template,
+		})
+		webhookClients[wc.ID] = client
+	}
+
+	// 缓冲区溢出回调（写入数据库持久化）
+	overflowFn := func(entry *webhook.LimitedAlertEntry) {
+		if err := st.SaveLimitedAlert(&model.LimitedAlert{
+			RuleName:  entry.RuleName,
+			Message:   entry.Message,
+			Level:     entry.Level,
+			Source:    entry.Source,
+			Timestamp: entry.Timestamp,
+			LimitedAt: entry.LimitedAt.Format("2006-01-02 15:04:05"),
+			Summary:   entry.Summary,
+		}); err != nil {
+			log.Printf("[Webhook] 保存限流告警失败: %v", err)
+		}
+	}
+	if defaultWebhook != nil {
+		defaultWebhook.SetOverflowHandler(overflowFn)
+	}
+	for _, client := range webhookClients {
+		client.SetOverflowHandler(overflowFn)
+	}
+
+	// ES 管道
+	deduper := dedup.NewDeduplicator(5*time.Minute, 100000)
+	esPipeline := logmonitor.NewESPipeline(deduper, logParser, filterEngine, wsHub, defaultWebhook, webhookClients)
+	esConfig, _ := st.GetESConfig()
+	if esConfig != nil && esConfig.Enabled && esConfig.Address != "" {
+		esConfigWithPwd := *esConfig
+		esConfigWithPwd.Password = esConfig.Password
+		if err := esPipeline.Start(&esConfigWithPwd); err != nil {
+			log.Printf("[ES] 自动启动 ES 管道失败: %v", err)
+		}
+	}
+
+	return logmonitor.NewLogMonitorHandler(st, wsHub, filterEngine, defaultWebhook, webhookClients, esPipeline)
 }
 
 func registerStaticRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "internal/webui/static/login.html")
-	})
+	// 登录页由前端提供，后端不再内嵌
 }

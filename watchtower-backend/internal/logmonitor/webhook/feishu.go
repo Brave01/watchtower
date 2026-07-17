@@ -424,6 +424,7 @@ func (c *Client) SendAlert(ruleName string, parsedLog *parser.ParsedLog, templat
 	enabled := c.enabled
 	if !enabled {
 		c.mu.Unlock()
+		log.Printf("[Webhook] 告警发送失败: rule=%s, 原因=Webhook 已停用（enabled=false）", ruleName)
 		return fmt.Errorf("Webhook 已停用（enabled=false）")
 	}
 	limited := !c.allow()
@@ -439,17 +440,20 @@ func (c *Client) SendAlert(ruleName string, parsedLog *parser.ParsedLog, templat
 			LimitedAt: time.Now(),
 			Summary:   template,
 		})
+		log.Printf("[Webhook] 告警发送失败: rule=%s, 原因=限流(令牌用尽, rateLimit=%d/s, rateLimitSec=%d/s, 已限流%d次)",
+			ruleName, c.rateLimit, c.rateLimitPerSec, c.totalLimited)
 		c.mu.Unlock()
 		return fmt.Errorf("限流: 每分钟最多 %d 条 / 每秒最多 %d 条，令牌已用尽", c.rateLimit, c.rateLimitPerSec)
 	}
 	c.mu.Unlock()
 
 	if url == "" {
+		log.Printf("[Webhook] 告警发送失败: rule=%s, 原因=Webhook URL 未配置", ruleName)
 		return fmt.Errorf("飞书 Webhook URL 未配置")
 	}
 
 	message := c.buildMessage(ruleName, parsedLog, template)
-	err := c.sendWithRetry(message)
+	err := c.sendWithRetry(message, ruleName)
 	if err == nil {
 		c.mu.Lock()
 		c.totalSent++
@@ -510,7 +514,7 @@ func (c *Client) SendSimpleMessage(text string) error {
 		},
 	}
 
-	return c.sendWithRetry(msg)
+	return c.sendWithRetry(msg, "heartbeat")
 }
 
 func (c *Client) buildMessage(ruleName string, parsedLog *parser.ParsedLog, template string) *FeishuMessage {
@@ -574,7 +578,7 @@ func (c *Client) buildMessage(ruleName string, parsedLog *parser.ParsedLog, temp
 	return msg
 }
 
-func (c *Client) sendWithRetry(msg *FeishuMessage) error {
+func (c *Client) sendWithRetry(msg *FeishuMessage, ruleName string) error {
 	var lastErr error
 
 	c.mu.RLock()
@@ -585,18 +589,26 @@ func (c *Client) sendWithRetry(msg *FeishuMessage) error {
 	for i := 0; i <= maxRetries; i++ {
 		if err := c.send(url, msg); err != nil {
 			lastErr = err
-			fmt.Printf("[Webhook] 发送失败(第%d次重试): %v\n", i+1, err)
-			// 飞书频率限制错误 -> 等更长时间再重试
-			if strings.Contains(err.Error(), "code=11232") || strings.Contains(err.Error(), "frequency limited") {
+			log.Printf("[Webhook] 告警发送失败: rule=%s, 原因=%s (第%d次重试)", ruleName, err, i+1)
+			// 飞书频率限制错误（code=11232 或 9499）-> 等更长时间再重试
+			if strings.Contains(err.Error(), "code=11232") || strings.Contains(err.Error(), "code=9499") ||
+				strings.Contains(err.Error(), "frequency limited") ||
+				strings.Contains(err.Error(), "too many request") {
 				time.Sleep(15 * time.Second)
 			} else {
 				time.Sleep(time.Duration(1<<i) * time.Second)
 			}
 			continue
 		}
+		// 发送成功日志
+		c.mu.RLock()
+		log.Printf("[Webhook] 告警发送成功: rule=%s, 令牌剩余: minute=%.1f/s, second=%.1f/s",
+			ruleName, c.tokens, c.tokensPerSec)
+		c.mu.RUnlock()
 		return nil
 	}
 
+	log.Printf("[Webhook] 告警发送最终失败: rule=%s, 原因=%s", ruleName, lastErr)
 	return fmt.Errorf("发送飞书消息失败(已重试%d次): %v", maxRetries, lastErr)
 }
 
@@ -614,6 +626,14 @@ func (c *Client) send(url string, msg *FeishuMessage) error {
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
+		// 尝试解析飞书 JSON 错误码
+		var feishuErr struct {
+			Code int    `json:"code"`
+			Msg  string `json:"msg"`
+		}
+		if json.Unmarshal(body, &feishuErr) == nil && feishuErr.Code != 0 {
+			return fmt.Errorf("HTTP %d: code=%d, msg=%s", resp.StatusCode, feishuErr.Code, feishuErr.Msg)
+		}
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 

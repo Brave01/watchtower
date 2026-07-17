@@ -70,7 +70,7 @@
     </div>
 
     <!-- Add/Edit modal -->
-    <div v-if="showAddModal||editingHost" class="modal-overlay" @click.self="closeModal">
+    <div v-if="showAddModal||editingHost" class="modal-overlay">
       <div class="modal" @click.stop>
         <div class="modal-header">
           <span class="modal-title">{{ editingHost ? '编辑主机' : '添加主机' }}</span>
@@ -162,7 +162,7 @@
     </div>
 
     <!-- SSH Credential Selection modal -->
-    <div v-if="showSSHSelectModal" class="modal-overlay" @click.self="cancelSSHConnect">
+    <div v-if="showSSHSelectModal" class="modal-overlay">
       <div class="modal" @click.stop>
         <div class="modal-header">
           <span class="modal-title">SSH 连接 - {{ (pendingTerminalHost.hostname || pendingTerminalHost.ip) }}</span>
@@ -232,8 +232,8 @@
     </div>
 
     <!-- Batch Add Hosts modal -->
-    <div v-if="showBatchHostModal" class="modal-overlay" @click.self="showBatchHostModal=false">
-      <div class="modal modal-lg">
+    <div v-if="showBatchHostModal" class="modal-overlay">
+      <div class="modal modal-xl">
         <div class="modal-header">
           <span class="modal-title">批量添加主机</span>
           <button class="modal-close" @click="showBatchHostModal=false">&times;</button>
@@ -241,40 +241,49 @@
         <div class="modal-body">
           <div class="form-group">
             <label class="form-label">主机列表</label>
-            <div class="table-wrap" style="margin-bottom:12px">
-              <table>
-                <thead>
-                  <tr>
-                    <th>主机名称</th>
-                    <th>主机地址</th>
-                    <th>项目</th>
-                    <th>SSH 凭据</th>
-                    <th>CPU</th>
-                    <th>内存</th>
-                    <th>磁盘</th>
-                    <th style="width:6%">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(item, idx) in batchHostItems" :key="idx">
-                    <td><input class="form-input" v-model="item.hostname" placeholder="web-server-01" style="font-size:13px"></td>
-                    <td><input class="form-input" v-model="item.ip" placeholder="192.168.1.100" style="font-size:13px"></td>
-                    <td><input class="form-input" v-model="item.project" placeholder="项目名" style="font-size:13px"></td>
-                    <td>
-                      <select class="form-select" v-model="item.ssh_credential_id" style="font-size:13px">
-                        <option value="">默认</option>
-                        <option v-for="c in sshCredentials" :key="c.id" :value="c.id">{{ c.label }}</option>
-                      </select>
-                    </td>
-                    <td><input class="form-input" v-model="item.cpu" placeholder="4核" style="font-size:13px;width:70px"></td>
-                    <td><input class="form-input" v-model="item.memory" placeholder="8GB" style="font-size:13px;width:70px"></td>
-                    <td><input class="form-input" v-model="item.disk" placeholder="/:50G" style="font-size:13px"></td>
-                    <td><button class="btn btn-sm btn-danger" @click="removeBatchHost(idx)" :disabled="batchHostItems.length<=1">删除</button></td>
-                  </tr>
-                </tbody>
-              </table>
+            <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:12px">
+              <div v-for="(item, idx) in batchHostItems" :key="idx"
+                style="border:1px solid var(--border-color, #d1d5db);border-radius:8px;padding:16px;background:var(--card-bg, #fff)">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                  <span style="font-weight:600;font-size:14px;color:var(--text-secondary,#666)">#{{ idx + 1 }}</span>
+                  <button class="btn btn-sm btn-danger" @click="removeBatchHost(idx)" :disabled="batchHostItems.length<=1">删除</button>
+                </div>
+                <div class="batch-host-grid">
+                  <div class="batch-host-field">
+                    <label style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px;display:block">主机名称</label>
+                    <input class="form-input" v-model="item.hostname" placeholder="web-server-01">
+                  </div>
+                  <div class="batch-host-field">
+                    <label style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px;display:block">主机地址</label>
+                    <input class="form-input" v-model="item.ip" placeholder="192.168.1.100">
+                  </div>
+                  <div class="batch-host-field">
+                    <label style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px;display:block">项目</label>
+                    <input class="form-input" v-model="item.project" placeholder="项目名">
+                  </div>
+                  <div class="batch-host-field">
+                    <label style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px;display:block">SSH 凭据</label>
+                    <select class="form-select" v-model="item.ssh_credential_id">
+                      <option value="">默认</option>
+                      <option v-for="c in sshCredentials" :key="c.id" :value="c.id">{{ c.label }}</option>
+                    </select>
+                  </div>
+                  <div class="batch-host-field">
+                    <label style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px;display:block">CPU</label>
+                    <input class="form-input" v-model="item.cpu" placeholder="4核">
+                  </div>
+                  <div class="batch-host-field">
+                    <label style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px;display:block">内存</label>
+                    <input class="form-input" v-model="item.memory" placeholder="8GB">
+                  </div>
+                  <div class="batch-host-field">
+                    <label style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px;display:block">磁盘</label>
+                    <input class="form-input" v-model="item.disk" placeholder="/:50G">
+                  </div>
+                </div>
+              </div>
             </div>
-            <button class="btn btn-sm" @click="addBatchHost">+ 添加一行</button>
+            <button class="btn btn-sm" @click="addBatchHost">+ 添加一台主机</button>
           </div>
         </div>
         <div class="modal-footer">
@@ -285,7 +294,7 @@
     </div>
 
     <!-- Add/Edit Role modal -->
-    <div v-if="showAddRoleModal" class="modal-overlay" @click.self="showAddRoleModal=false">
+    <div v-if="showAddRoleModal" class="modal-overlay">
       <div class="modal">
         <div class="modal-header">
           <span class="modal-title">{{ editingRole ? '编辑角色' : '添加角色' }}</span>
@@ -327,7 +336,7 @@
     </div>
 
     <!-- Assign Role modal -->
-    <div v-if="showAssignModal" class="modal-overlay" @click.self="showAssignModal=false">
+    <div v-if="showAssignModal" class="modal-overlay">
       <div class="modal">
         <div class="modal-header">
           <span class="modal-title">分配角色</span>
@@ -357,7 +366,7 @@
     </div>
 
     <!-- Batch Create Roles modal -->
-    <div v-if="showBatchRoleModal" class="modal-overlay" @click.self="showBatchRoleModal=false">
+    <div v-if="showBatchRoleModal" class="modal-overlay">
       <div class="modal modal-lg">
         <div class="modal-header">
           <span class="modal-title">批量创建角色</span>
@@ -408,7 +417,7 @@
     </div>
 
     <!-- Role Management modal -->
-    <div v-if="showRoleManageModal" class="modal-overlay" @click.self="showRoleManageModal=false">
+    <div v-if="showRoleManageModal" class="modal-overlay">
       <div class="modal" style="max-width:560px">
         <div class="modal-header">
           <span class="modal-title">角色管理</span>
@@ -440,7 +449,7 @@
     </div>
 
     <!-- SSH Credential modal -->
-    <div v-if="showSSHCredModal" class="modal-overlay" @click.self="showSSHCredModal=false">
+    <div v-if="showSSHCredModal" class="modal-overlay">
       <div class="modal" style="max-width:560px">
         <div class="modal-header">
           <span class="modal-title">SSH 凭据管理</span>

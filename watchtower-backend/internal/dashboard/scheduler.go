@@ -57,8 +57,10 @@ func (s *Scheduler) Trigger() {
 }
 
 func (s *Scheduler) ProbeHost(hostID string) {
+	log.Printf("[INFO] [Scheduler] 开始单主机探测: host=%s", hostID)
 	assignments, err := s.store.ListAssignments()
 	if err != nil {
+		log.Printf("[ERROR] [Scheduler] 单主机探测失败: host=%s, 获取分配列表失败: %s", hostID, err)
 		return
 	}
 	var hostAssignments []model.Assignment
@@ -68,6 +70,7 @@ func (s *Scheduler) ProbeHost(hostID string) {
 		}
 	}
 	if len(hostAssignments) == 0 {
+		log.Printf("[WARN] [Scheduler] 单主机探测跳过: host=%s, 无分配角色", hostID)
 		return
 	}
 	creds, _ := s.store.ListSSHCredentials()
@@ -91,6 +94,7 @@ func (s *Scheduler) ProbeHost(hostID string) {
 		s.handleProbeResult(hostID, a.RoleID, pr, now)
 	}
 	s.updateHostsSummary()
+	log.Printf("[INFO] [Scheduler] 单主机探测完成: host=%s", hostID)
 }
 
 func (s *Scheduler) probeAll() {
@@ -144,6 +148,7 @@ func (s *Scheduler) probeAll() {
 		s.handleProbeResult(r.hostID, r.roleID, r.res, now)
 	}
 	s.updateHostsSummary()
+	log.Printf("[INFO] [Scheduler] 全量探测完成: 共 %d 个分配", len(assignments))
 }
 
 func (s *Scheduler) handleProbeResult(hostID, roleID string, pr *model.ProbeResult, now time.Time) {

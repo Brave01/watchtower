@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net"
@@ -205,27 +206,42 @@ func pipeWebSocketToSSH(conn *websocket.Conn, s *sshSession) {
 		return
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	done := make(chan struct{})
 
 	go func() {
+		defer close(done)
 		buf := make([]byte, 4096)
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			n, err := stdout.Read(buf)
 			if n > 0 {
 				conn.WriteMessage(websocket.BinaryMessage, buf[:n])
 			}
 			if err != nil {
-				break
+				return
 			}
 		}
-		close(done)
 	}()
 
 	go func() {
+		defer stdin.Close()
+		defer func() {
+			cancel()
+			s.session.Close()
+			s.client.Close()
+		}()
 		for {
 			_, message, err := conn.ReadMessage()
 			if err != nil {
-				break
+				log.Printf("[SSH-WS] WebSocket 已关闭，SSH 会话已释放")
+				return
 			}
 			var resize struct {
 				Type string `json:"type"`
@@ -238,7 +254,6 @@ func pipeWebSocketToSSH(conn *websocket.Conn, s *sshSession) {
 			}
 			stdin.Write(message)
 		}
-		stdin.Close()
 	}()
 
 	s.session.Wait()

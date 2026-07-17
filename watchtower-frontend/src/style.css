@@ -534,3 +534,20 @@ tr:hover td { background: var(--hover-bg); }
   transition: background .1s;
 }
 .suggestions-dropdown li:hover { background: var(--hover-bg); }
+
+/* ===== 批量添加主机 ===== */
+.batch-host-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 768px) {
+  .batch-host-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.batch-host-field .form-input,
+.batch-host-field .form-select {
+  width: 100%;
+  font-size: 13px;
+}
