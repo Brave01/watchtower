@@ -26,7 +26,7 @@ cd server_controller_manager
 
 # 3. 启动后端（终端 1）
 cd watchtower-backend
-go build -o watchtower .
+go build -o watchtower ./cmd/server
 ./watchtower
 
 # 4. 启动前端（终端 2，热更新）
@@ -39,6 +39,11 @@ npx vite --host
 # 默认账号密码：admin / admin
 ```
 
+> **注意**：开发环境下 WebSocket（SSH 终端）走 Vite 代理，无需额外配置。如果后端端口不是默认 3972，启动前端时设置环境变量：
+> ```bash
+> VITE_WS_PORT=3971 npx vite --host
+> ```
+
 **生产模式（Docker）：**
 
 ```bash
@@ -47,14 +52,22 @@ docker compose up -d
 # 访问 http://localhost:3972
 ```
 
+> **注意**：如果后端端口不是 3972，需要修改 `docker-compose.yml` 中的 `proxy_pass` 目标端口，以及在 `Dockerfile` 中更新 `VITE_WS_PORT` 环境变量。
+
 ### 1.3 配置说明
 
-| 配置文件 | 路径                                       | 说明                                                                 |
+| 配置文件 | 路径 | 说明 |
 | ---- | ---------------------------------------- | ------------------------------------------------------------------ |
-| 主配置  | `watchtower-backend/configs/config.yaml` | 端口（默认 3972）、ES 地址、探针间隔（默认 15s）                                     |
-| 环境变量 | `watchtower-backend/configs/.env`        | `ES_PASSWORD`、`AUTH_JWT_SECRET`、`ADMIN_USER`、`ADMIN_PASSWORD_HASH` |
+| 主配置 | `watchtower-backend/configs/config.yaml` | 端口（默认 3972）、探针间隔（默认 15s） |
+| 环境变量 | `watchtower-backend/configs/.env` | `ES_PASSWORD`、`AUTH_JWT_SECRET`、`ADMIN_USER`、`ADMIN_PASSWORD_HASH` |
 
 > `.env` 文件会在启动时自动加载，无需手动 `source`。
+
+### 1.4 端口配置
+
+**后端端口优先级**：环境变量 `PORT` > `config.yaml server.port` > 默认 3972
+
+**前端 WebSocket 端口**：通过构建时环境变量 `VITE_WS_PORT` 配置（Dockerfile 中默认 3972），生产环境直连该端口。
 
 ***
 
@@ -170,6 +183,11 @@ docker compose up -d
 - 删除 SSH 凭据
 - 凭据保存后，密码字段脱敏显示为 `******`
 
+**部署注意事项：**
+
+- 生产环境 SSH WebSocket 通过 `ws://ip:3972/api/ssh/ws` 直连后端 nginx
+- 如果后端端口不是 3972，需要在 Dockerfile 中修改 `VITE_WS_PORT` 环境变量
+
 ### 2.6 架构图
 
 架构图功能基于 **Vue Flow** 库实现，用于可视化展示主机与服务的拓扑关系。
@@ -180,12 +198,12 @@ docker compose up -d
 
 **四种交互模式：**
 
-| 模式   | 操作方式                 | 用途           |
+| 模式 | 操作方式 | 用途 |
 | ---- | -------------------- | ------------ |
-| 选择模式 | 拖拽移动节点/文字/分组框；点击可选中  | 布局调整、选中元素    |
-| 连线模式 | 点击源节点连接点 → 点击目标节点连接点 | 创建节点间的连线     |
-| 文字模式 | 点击画布空白处              | 添加文字标注       |
-| 分组模式 | 在画布上拖拽画矩形框           | 将一组服务框选为逻辑分组 |
+| 选择模式 | 拖拽移动节点/文字/分组框；点击可选中 | 布局调整、选中元素 |
+| 连线模式 | 点击源节点连接点 → 点击目标节点连接点 | 创建节点间的连线 |
+| 文字模式 | 点击画布空白处 | 添加文字标注 |
+| 分组模式 | 在画布上拖拽画矩形框 | 将一组服务框选为逻辑分组 |
 
 **节点连接：**
 
@@ -218,12 +236,12 @@ docker compose up -d
 
 **四个子标签：**
 
-| 子标签   | 功能说明                                                      |
+| 子标签 | 功能说明 |
 | ----- | --------------------------------------------------------- |
-| 告警规则  | 管理日志告警规则，支持关键词匹配、正则匹配、排除关键词、冷却时间、指定 Webhook 等配置           |
+| 告警规则 | 管理日志告警规则，支持关键词匹配、正则匹配、排除关键词、冷却时间、指定 Webhook 等配置 |
 | ES 配置 | 配置 Elasticsearch 连接信息（地址、用户名、密码、索引、轮询间隔、每次查询最大日志数），显示连接状态 |
-| 实时日志  | 通过 WebSocket 实时推送日志流，显示时间戳、日志级别(INFO/ERROR)、告警令牌剩余等信息     |
-| 限流缓存  | 查看被限流策略拦截的告警记录                                            |
+| 实时日志 | 通过 WebSocket 实时推送日志流，显示时间戳、日志级别(INFO/ERROR)、告警令牌剩余等信息 |
+| 限流缓存 | 查看被限流策略拦截的告警记录 |
 
 **告警规则：**
 
@@ -262,9 +280,9 @@ docker compose up -d
 
 **Sheet 结构：**
 
-| Sheet 名称 | 内容                                                         |
+| Sheet 名称 | 内容 |
 | -------- | ---------------------------------------------------------- |
-| 主机列表     | 基础信息：名称、地址、状态（中文）、**CPU(核)**、**内存(GB)**、磁盘（挂载点+容量）、角色、维护模式 |
+| 主机列表 | 基础信息：名称、地址、状态（中文）、CPU(核)、内存(GB)、磁盘（挂载点+容量）、角色、维护模式 |
 
 > 不再使用分区独立 Sheet，所有磁盘信息合并显示在主机列表行的磁盘列中。
 
@@ -348,4 +366,7 @@ npm run build
 构建后使用 Docker 部署即可更新前端。
 
 - **告警令牌**：Webhook 限流令牌每分钟/每秒刷新，实时日志中可查看剩余令牌数。
-
+- **端口变更**：如果修改了后端端口，需要同步更新：
+  1. `configs/config.yaml` 中的 `server.port`
+  2. `deploy/Dockerfile` 中的 `VITE_WS_PORT` 环境变量
+  3. `deploy/nginx.conf` 中的 `proxy_pass` 目标端口
