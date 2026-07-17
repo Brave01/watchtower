@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -89,10 +91,14 @@ func main() {
 	corsHandler := middleware.CORS(mid(mux))
 
 	// 启动 HTTP 服务
-	addr := ":" + core.GetEnv("PORT", "")
-	if addr == ":" {
-		addr = ":3972"
+	port := cfg.Server.Port
+	if envPort := core.GetEnv("PORT", ""); envPort != "" {
+		port, _ = strconv.Atoi(envPort)
 	}
+	if port <= 0 {
+		port = 3972
+	}
+	addr := fmt.Sprintf(":%d", port)
 	srv := &http.Server{Addr: addr, Handler: corsHandler}
 
 	quit := make(chan os.Signal, 1)

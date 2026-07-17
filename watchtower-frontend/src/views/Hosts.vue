@@ -1132,8 +1132,9 @@ async function initTerminal() {
 function connectWithCred(credId) {
   if (!terminalHost.value) return
   disconnectTerminal()
-  // 优先通过后端端口连接，避免 Vite 代理 WebSocket 问题
-  const wsBase = location.port === '3972' ? '' : ':3972'
+  // 开发环境走 Vite 代理（同端口），生产环境直连后端端口
+  const backendPort = import.meta.env.VITE_WS_PORT || '3972'
+  const wsBase = import.meta.env.DEV ? '' : ':' + backendPort
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   const wsUrl = proto + '//' + location.hostname + wsBase + '/api/ssh/ws?host_id=' + encodeURIComponent(terminalHost.value.id) + '&cred_id=' + encodeURIComponent(credId)
   try {
@@ -1157,7 +1158,9 @@ function connectWithCred(credId) {
 function connectTerminal() {
   if (!terminalHost.value) return
   disconnectTerminal()
-  const wsBase = location.port === '3972' ? '' : ':3972'
+  // 开发环境走 Vite 代理（同端口），生产环境直连后端端口
+  const backendPort = import.meta.env.VITE_WS_PORT || '3972'
+  const wsBase = import.meta.env.DEV ? '' : ':' + backendPort
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   const wsUrl = proto + '//' + location.hostname + wsBase + '/api/ssh/ws?host_id=' + encodeURIComponent(terminalHost.value.id)
   try {
