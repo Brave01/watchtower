@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"watchtower/internal/model"
 	"watchtower/internal/store"
 
 	"github.com/gorilla/websocket"
@@ -258,7 +259,7 @@ func resolveSSHPort(st store.Store, hostID string) int {
 		if err != nil || role == nil {
 			continue
 		}
-		if role.Type == store.ProbeTypeSSH {
+		if role.Type == model.ProbeTypeSSH {
 			if a.OverridePort != nil {
 				port = *a.OverridePort
 			} else {

@@ -1,16 +1,14 @@
 version: '3.8'
 
 services:
-  # Go 后端 API 服务
-  backend:
+  watchtower:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-      target: backend-server
-    container_name: watchtower-backend
+    container_name: watchtower
     restart: always
-    expose:
-      - "3972"
+    ports:
+      - "3972:3972"
     volumes:
       - ../watchtower-backend/data:/app/data
       - ../watchtower-backend/configs/.env:/app/configs/.env
@@ -20,17 +18,3 @@ services:
     cap_add:
       - NET_RAW
       - NET_ADMIN
-
-  # Nginx 前端服务（反向代理 API 到 backend）
-  frontend:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      target: frontend-server
-    container_name: watchtower-frontend
-    restart: always
-    ports:
-      - "3972:80"
-    depends_on:
-      - backend
-    privileged: true

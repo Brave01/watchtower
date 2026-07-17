@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"watchtower/internal/model"
 	"watchtower/internal/store"
 
 	"golang.org/x/crypto/ssh"
@@ -95,7 +96,7 @@ func parseSize(s string) (int, error) {
 }
 
 // dialSSH 建立 SSH 连接并返回 client
-func dialSSH(ip string, port int, cred *store.SSHCredential) (*ssh.Client, error) {
+func dialSSH(ip string, port int, cred *model.SSHCredential) (*ssh.Client, error) {
 	if cred == nil || cred.Username == "" {
 		return nil, fmt.Errorf("未配置 SSH 凭据")
 	}
@@ -135,7 +136,7 @@ func runSSHCommand(client *ssh.Client, cmd string) (string, error) {
 }
 
 // collectHost 对单台主机执行 SSH 采集，返回采集结果
-func collectHost(host *store.Host, cred *store.SSHCredential) *CollectResult {
+func collectHost(host *model.Host, cred *model.SSHCredential) *CollectResult {
 	result := &CollectResult{
 		HostID:  host.ID,
 		Success: false,
@@ -236,7 +237,7 @@ func collectHost(host *store.Host, cred *store.SSHCredential) *CollectResult {
 }
 
 // CollectHosts 采集指定主机列表，支持并发限制
-func CollectHosts(hosts []store.Host, st store.Store) []*CollectResult {
+func CollectHosts(hosts []model.Host, st store.Store) []*CollectResult {
 	limiter := make(chan struct{}, maxConcurrent)
 	var mu sync.Mutex
 	var results []*CollectResult
@@ -245,12 +246,12 @@ func CollectHosts(hosts []store.Host, st store.Store) []*CollectResult {
 	for i := range hosts {
 		wg.Add(1)
 		limiter <- struct{}{}
-		go func(h *store.Host) {
+		go func(h *model.Host) {
 			defer wg.Done()
 			defer func() { <-limiter }()
 
 			// 优先使用主机绑定的凭据，其次取第一个凭据
-			var sshCred *store.SSHCredential
+			var sshCred *model.SSHCredential
 			if h.SSHCredentialID != "" {
 				cred, _ := st.GetSSHCredential(h.SSHCredentialID)
 				if cred != nil {

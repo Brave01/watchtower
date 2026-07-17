@@ -1,9 +1,6 @@
-package store
+package model
 
-import (
-	"encoding/json"
-	"time"
-)
+import "time"
 
 type AlertRule struct {
 	ID              string `json:"id"`
@@ -15,7 +12,7 @@ type AlertRule struct {
 	RegexPattern    string `json:"regex_pattern"`
 	Cooldown        int    `json:"cooldown"`
 	MessageTemplate string `json:"message_template"`
-	WebhookID       int    `json:"webhook_id"` // 关联的 webhook ID，0 表示使用默认
+	WebhookID       int    `json:"webhook_id"`
 	CreatedAt       string `json:"created_at"`
 	UpdatedAt       string `json:"updated_at"`
 }
@@ -98,17 +95,17 @@ type ESConfig struct {
 type WebhookConfig struct {
 	ID                 int    `json:"id"`
 	Name               string `json:"name"`
-	Platform           string `json:"platform"` // feishu, dingtalk, wechat, custom
+	Platform           string `json:"platform"`
 	URL                string `json:"url"`
-	Secret             string `json:"secret"`  // webhook secret/signature
-	Enabled            bool   `json:"enabled"` // 启用/停用
+	Secret             string `json:"secret"`
+	Enabled            bool   `json:"enabled"`
 	MaxRetries         int    `json:"max_retries"`
-	MentionType        string `json:"mention_type"`          // none, all, specific
-	MentionUsers       string `json:"mention_users"`         // @指定人 ID，逗号分隔
-	RateLimit          int    `json:"rate_limit"`            // 每分钟限流次数（0=不限制）
-	RateLimitPerSecond int    `json:"rate_limit_per_second"` // 每秒限流次数（0=不限制）
+	MentionType        string `json:"mention_type"`
+	MentionUsers       string `json:"mention_users"`
+	RateLimit          int    `json:"rate_limit"`
+	RateLimitPerSecond int    `json:"rate_limit_per_second"`
 	RingBufferSize     int    `json:"ring_buffer_size"`
-	Template           string `json:"template"` // 告警消息模板
+	Template           string `json:"template"`
 }
 
 type LimitedAlert struct {
@@ -120,41 +117,4 @@ type LimitedAlert struct {
 	Timestamp string `json:"timestamp"`
 	LimitedAt string `json:"limited_at"`
 	Summary   string `json:"summary"`
-}
-
-const (
-	HostStatusUnknown = 0
-	HostStatusUp      = 1
-	HostStatusDown    = 2
-	HostStatusWarning = 3
-	HostStatusMuted   = 4
-)
-const (
-	ProbeTypeICMP = "ICMP"
-	ProbeTypeTCP  = "TCP"
-	ProbeTypeHTTP = "HTTP"
-	ProbeTypeSSH  = "SSH"
-)
-const RoleIDICMP = "role-icmp"
-
-func JoinStrings(items []string) string {
-	data, _ := json.Marshal(items)
-	return string(data)
-}
-func SplitStrings(s string) []string {
-	var items []string
-	if s == "" {
-		return items
-	}
-	json.Unmarshal([]byte(s), &items)
-	return items
-}
-func BoolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-func IntToBool(i int) bool {
-	return i != 0
 }
