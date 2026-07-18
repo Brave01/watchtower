@@ -40,4 +40,7 @@ func (h *DashboardHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/refresh", h.HandleRefresh)
 	mux.HandleFunc("/api/ssh-credential", h.HandleSSHCredential)
 	mux.HandleFunc("/api/ssh/ws", h.HandleSSHWebSocket)
+	mux.HandleFunc("/api/hosts/batch-simple", h.HandleBatchSimple)
+	mux.HandleFunc("/api/hosts/batch/status", h.HandleBatchStatus)
+	mux.HandleFunc("/api/hosts/batch-delete", h.HandleBatchDelete)
 }

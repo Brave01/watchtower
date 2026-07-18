@@ -29,11 +29,13 @@ type Store interface {
 	// 主机
 	ListHosts() ([]model.Host, error)
 	GetHost(id string) (*model.Host, error)
+	GetHostByIP(ip string) (*model.Host, error)
 	AddHost(h *model.Host) error
 	UpdateHost(h *model.Host) error
 	UpdateHostStatus(id string, status int, checkTime time.Time) error
 	UpdateHostMaintenance(id string, maintenance bool) error
 	DeleteHost(id string) error
+	DeleteHosts(ids []string) error
 
 	// 角色
 	ListRoles() ([]model.Role, error)

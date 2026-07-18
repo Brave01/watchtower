@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"sort"
@@ -971,4 +972,162 @@ func (h *DashboardHandler) HandleSSHCredential(w http.ResponseWriter, r *http.Re
 func (h *DashboardHandler) HandleSSHWebSocket(w http.ResponseWriter, r *http.Request) {
 	dashHandle := dashboard.HandleSSHWebSocket(h.store)
 	dashHandle(w, r)
+}
+
+// HandleBatchSimple POST /api/hosts/batch-simple
+// 简化版批量添加：传入 IP 列表 + SSH 凭据 ID，自动创建主机并异步采集
+func (h *DashboardHandler) HandleBatchSimple(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		utils.WriteJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false})
+		return
+	}
+	var req struct {
+		IPs             []string `json:"ips"`
+		SSHCredentialID string   `json:"ssh_credential_id"`
+		Project         string   `json:"project"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.WriteJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "无效 JSON: " + err.Error()})
+		return
+	}
+	if len(req.IPs) == 0 {
+		utils.WriteJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "IP 列表不能为空"})
+		return
+	}
+
+	batchID := dashboard.NewBatchID()
+	bs := &dashboard.BatchState{
+		BatchID: batchID,
+		Total:   len(req.IPs),
+		Hosts:   make([]*dashboard.BatchHostStatus, 0, len(req.IPs)),
+	}
+
+	var createdHosts []model.Host
+	var errs []string
+
+	for _, ip := range req.IPs {
+		ip = strings.TrimSpace(ip)
+		if ip == "" {
+			continue
+		}
+		// 检查 IP 是否已存在
+		existing, _ := h.store.GetHostByIP(ip)
+		if existing != nil {
+			errs = append(errs, ip+": IP 已存在")
+			bs.Hosts = append(bs.Hosts, &dashboard.BatchHostStatus{IP: ip, Hostname: existing.Hostname, Status: "failed", Error: "IP 已存在"})
+			continue
+		}
+		host := &model.Host{
+			ID:              uuid.New().String(),
+			IP:              ip,
+			Hostname:        ip,
+			Project:         req.Project,
+			SSHCredentialID: req.SSHCredentialID,
+			Status:          model.HostStatusUnknown,
+		}
+		if err := h.store.AddHost(host); err != nil {
+			errs = append(errs, ip+": "+err.Error())
+			bs.Hosts = append(bs.Hosts, &dashboard.BatchHostStatus{IP: ip, Status: "failed", Error: err.Error()})
+			continue
+		}
+		icmpRole, _ := h.store.GetRole(model.RoleIDICMP)
+		if icmpRole != nil {
+			h.store.AddAssignment(&model.Assignment{
+				HostID: host.ID,
+				RoleID: model.RoleIDICMP,
+				Status: model.HostStatusUnknown,
+			})
+		}
+		createdHosts = append(createdHosts, *host)
+		bs.Hosts = append(bs.Hosts, &dashboard.BatchHostStatus{IP: ip, Hostname: ip, Status: "pending"})
+	}
+	bs.Created = len(createdHosts)
+	dashboard.SetBatchState(bs)
+
+	// 异步采集
+	if len(createdHosts) > 0 && req.SSHCredentialID != "" {
+		go func(hosts []model.Host, credID, bid string) {
+			cred, _ := h.store.GetSSHCredential(credID)
+			if cred == nil {
+				log.Printf("[BatchSimple] 凭据 %s 不存在", credID)
+				return
+			}
+			for i := range hosts {
+				host := &hosts[i]
+				dashboard.UpdateHostStatus(bid, host.IP, "collecting", "", "", "", "", "")
+				result := dashboard.CollectOne(host, cred)
+				if result.Success {
+					host.Hostname = result.Hostname
+					host.CPU = result.CPU
+					host.Memory = result.Memory
+					host.Disk = result.Disk
+					if result.Hostname != "" {
+						host.Hostname = result.Hostname
+					}
+					if err := h.store.UpdateHost(host); err != nil {
+						log.Printf("[BatchSimple] %s 更新失败: %v", host.IP, err)
+						dashboard.UpdateHostStatus(bid, host.IP, "failed", "", "", "", "", err.Error())
+					} else {
+						dashboard.UpdateHostStatus(bid, host.IP, "success", result.Hostname, result.CPU, result.Memory, result.Disk, "")
+					}
+				} else {
+					dashboard.UpdateHostStatus(bid, host.IP, "failed", "", "", "", "", result.Error)
+				}
+			}
+		}(createdHosts, req.SSHCredentialID, batchID)
+	} else {
+		dashboard.SetBatchDone(batchID)
+	}
+
+	resp := map[string]interface{}{
+		"batch_id": batchID,
+		"total":    bs.Total,
+		"created":  bs.Created,
+		"errors":   errs,
+	}
+	utils.WriteJSON(w, http.StatusAccepted, apiResponse{Success: true, Message: "批量添加已启动", Data: resp})
+}
+
+// HandleBatchStatus GET /api/hosts/batch/status?batch_id=xxx
+func (h *DashboardHandler) HandleBatchStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		utils.WriteJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false})
+		return
+	}
+	batchID := r.URL.Query().Get("batch_id")
+	if batchID == "" {
+		utils.WriteJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "缺少 batch_id 参数"})
+		return
+	}
+	bs := dashboard.GetBatchState(batchID)
+	if bs == nil {
+		utils.WriteJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "batch_id 不存在"})
+		return
+	}
+	utils.WriteJSON(w, http.StatusOK, apiResponse{Success: true, Data: bs})
+}
+
+// HandleBatchDelete POST /api/hosts/batch-delete
+// 批量删除主机
+func (h *DashboardHandler) HandleBatchDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		utils.WriteJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false})
+		return
+	}
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.WriteJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "无效 JSON: " + err.Error()})
+		return
+	}
+	if len(req.IDs) == 0 {
+		utils.WriteJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "id 列表不能为空"})
+		return
+	}
+	if err := h.store.DeleteHosts(req.IDs); err != nil {
+		utils.WriteJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+		return
+	}
+	utils.WriteJSON(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("已删除 %d 台主机", len(req.IDs))})
 }

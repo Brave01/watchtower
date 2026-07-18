@@ -8,7 +8,8 @@
     <!-- Actions -->
     <div class="action-bar">
       <button class="btn btn-primary" @click="showAddModal=true">+ 添加主机</button>
-      <button class="btn" @click="openBatchHostModal">批量添加主机</button>
+      <button class="btn" @click="openSimpleBatchModal">批量导入 IP</button>
+      <button v-if="selectedHostIds.length > 0" class="btn btn-danger" @click="showBatchDeleteModal=true">删除选中 ({{ selectedHostIds.length }})</button>
       <button class="btn" @click="openAddRoleModal">添加角色</button>
       <button class="btn" @click="openAssignModal">分配角色</button>
       <button class="btn" @click="openBatchRoleModal">批量创建角色</button>
@@ -32,10 +33,24 @@
       <button v-for="r in roles" :key="r.id" class="role-chip" :class="{active: activeRole === r.name}" @click="activeRole=r.name;activeProject=''">{{ roleDisplayName(r.name) }}</button>
     </div>
 
+    <!-- Selection bar -->
+    <div v-if="hosts.length > 0" class="selection-bar">
+      <label class="selection-label">
+        <input type="checkbox" :checked="allSelected" @change="toggleSelectAll" class="host-checkbox">
+        <span>全选</span>
+      </label>
+      <span v-if="selectedHostIds.length > 0" class="selection-count">
+        已选 <strong>{{ selectedHostIds.length }}</strong> 台
+        <a href="#" class="selection-clear" @click.prevent="selectedHostIds=[]">清除</a>
+      </span>
+      <span v-else class="selection-hint">点击复选框选中主机后可批量删除</span>
+    </div>
+
     <!-- Hosts grid -->
     <div class="hosts-grid">
-      <div v-for="host in filteredHosts" :key="host.id" class="host-card">
+      <div v-for="host in filteredHosts" :key="host.id" class="host-card" :class="{'host-selected': selectedHostIds.includes(host.id)}">
         <div class="host-header">
+          <input type="checkbox" class="host-checkbox" :checked="selectedHostIds.includes(host.id)" @change="toggleSelectHost(host.id)">
           <span class="led" :class="'led-'+hostStatus(host)"></span>
           <div>
             <div class="host-name">{{ host.hostname || host.ip }}</div>
@@ -231,64 +246,109 @@
       </div>
     </div>
 
-    <!-- Batch Add Hosts modal -->
-    <div v-if="showBatchHostModal" class="modal-overlay">
-      <div class="modal modal-xl">
+    <!-- Simple Batch Add Hosts modal (paste IPs) -->
+    <div v-if="showSimpleBatchModal" class="modal-overlay">
+      <div class="modal modal-lg">
         <div class="modal-header">
-          <span class="modal-title">批量添加主机</span>
-          <button class="modal-close" @click="showBatchHostModal=false">&times;</button>
+          <span class="modal-title">批量导入 IP</span>
+          <button class="modal-close" @click="closeSimpleBatchModal">&times;</button>
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label class="form-label">主机列表</label>
-            <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:12px">
-              <div v-for="(item, idx) in batchHostItems" :key="idx"
-                style="border:1px solid var(--border-color, #d1d5db);border-radius:8px;padding:16px;background:var(--card-bg, #fff)">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                  <span style="font-weight:600;font-size:14px;color:var(--text-secondary,#666)">#{{ idx + 1 }}</span>
-                  <button class="btn btn-sm btn-danger" @click="removeBatchHost(idx)" :disabled="batchHostItems.length<=1">删除</button>
-                </div>
-                <div class="batch-host-grid">
-                  <div class="batch-host-field">
-                    <label style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px;display:block">主机名称</label>
-                    <input class="form-input" v-model="item.hostname" placeholder="web-server-01">
-                  </div>
-                  <div class="batch-host-field">
-                    <label style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px;display:block">主机地址</label>
-                    <input class="form-input" v-model="item.ip" placeholder="192.168.1.100">
-                  </div>
-                  <div class="batch-host-field">
-                    <label style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px;display:block">项目</label>
-                    <input class="form-input" v-model="item.project" placeholder="项目名">
-                  </div>
-                  <div class="batch-host-field">
-                    <label style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px;display:block">SSH 凭据</label>
-                    <select class="form-select" v-model="item.ssh_credential_id">
-                      <option value="">默认</option>
-                      <option v-for="c in sshCredentials" :key="c.id" :value="c.id">{{ c.label }}</option>
-                    </select>
-                  </div>
-                  <div class="batch-host-field">
-                    <label style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px;display:block">CPU</label>
-                    <input class="form-input" v-model="item.cpu" placeholder="4核">
-                  </div>
-                  <div class="batch-host-field">
-                    <label style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px;display:block">内存</label>
-                    <input class="form-input" v-model="item.memory" placeholder="8GB">
-                  </div>
-                  <div class="batch-host-field">
-                    <label style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px;display:block">磁盘</label>
-                    <input class="form-input" v-model="item.disk" placeholder="/:50G">
-                  </div>
-                </div>
-              </div>
+            <label class="form-label">项目（可选）</label>
+            <input class="form-input" v-model="simpleBatchProject" placeholder="如：生产环境">
+          </div>
+          <div class="form-group">
+            <label class="form-label">SSH 凭据（可选）</label>
+            <select class="form-select" v-model="simpleBatchCredId" style="margin-bottom:16px">
+              <option value="">不选择（仅添加主机，不采集信息）</option>
+              <option v-for="c in sshCredentials" :key="c.id" :value="c.id">{{ c.label }} ({{ c.username }})</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">IP 地址列表</label>
+            <textarea
+              v-model="simpleBatchIPs"
+              placeholder="每行一个 IP，也支持逗号分隔&#10;例如：&#10;192.168.1.1&#10;192.168.1.2,192.168.1.3&#10;10.0.0.1"
+              rows="10"
+              style="width:100%;padding:10px;font-family:monospace;border:1px solid var(--border-color,#d1d5db);border-radius:6px;resize:vertical"
+            ></textarea>
+            <div v-if="parsedIPCount > 0" style="margin-top:8px;font-size:13px;color:var(--text-secondary,#666)">
+              识别到 <strong>{{ parsedIPCount }}</strong> 个 IP 地址
             </div>
-            <button class="btn btn-sm" @click="addBatchHost">+ 添加一台主机</button>
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn" @click="showBatchHostModal=false">取消</button>
-          <button class="btn btn-primary" @click="submitBatchHosts" :disabled="batchHostItems.length===0">批量添加</button>
+          <button class="btn" @click="closeSimpleBatchModal">取消</button>
+          <button class="btn btn-primary" @click="submitSimpleBatch" :disabled="parsedIPCount===0">
+            开始添加
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Batch Progress modal -->
+    <div v-if="showBatchProgressModal" class="modal-overlay">
+      <div class="modal modal-lg">
+        <div class="modal-header">
+          <span class="modal-title">添加进度</span>
+          <button class="modal-close" @click="closeBatchProgress" :disabled="!batchProgress?.done">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="margin-bottom:12px">
+            <span v-if="batchProgress">
+              进度：{{ batchProgress.completed }} / {{ batchProgress.total }}
+              <span v-if="batchProgress.done" style="color:var(--success,#22c55e)"> ✓ 已完成</span>
+            </span>
+          </div>
+          <div style="max-height:400px;overflow-y:auto;border:1px solid var(--border-color,#d1d5db);border-radius:6px">
+            <div v-for="h in batchProgress?.hosts || []" :key="h.ip"
+              style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border-color,#e5e7eb);font-size:13px">
+              <span style="flex-shrink:0;width:18px;text-align:center">
+                <span v-if="h.status==='pending'" style="color:#9ca3af">⏳</span>
+                <span v-else-if="h.status==='collecting'" style="color:#3b82f6">⟳</span>
+                <span v-else-if="h.status==='success'" style="color:#22c55e">✓</span>
+                <span v-else-if="h.status==='failed'" style="color:#ef4444">✗</span>
+              </span>
+              <code style="flex-shrink:0;font-size:12px">{{ h.ip }}</code>
+              <span v-if="h.hostname && h.hostname!==h.ip" style="flex-shrink:0;color:var(--text-secondary,#666)">→ {{ h.hostname }}</span>
+              <span v-if="h.status==='collecting'" style="color:#3b82f6;font-size:12px">正在采集...</span>
+              <span v-if="h.status==='success' && h.cpu" style="color:var(--text-secondary,#666);font-size:12px;margin-left:auto">
+                {{ h.cpu }}核 / {{ h.memory }} / {{ h.disk?.split(',').length || 0 }}分区
+              </span>
+              <span v-if="h.status==='failed'" style="color:#ef4444;font-size:12px;margin-left:auto">{{ h.error }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" @click="closeBatchProgress" :disabled="!batchProgress?.done">
+            {{ batchProgress?.done ? '关闭' : '请等待采集完成...' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Batch Delete confirmation modal -->
+    <div v-if="showBatchDeleteModal" class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <span class="modal-title">确认批量删除</span>
+          <button class="modal-close" @click="showBatchDeleteModal=false">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="margin-bottom:12px">确定要删除以下 <strong>{{ selectedHostIds.length }}</strong> 台主机吗？</p>
+          <div style="max-height:300px;overflow-y:auto;border:1px solid var(--border-color,#d1d5db);border-radius:6px;padding:8px">
+            <div v-for="id in selectedHostIds" :key="id" style="padding:4px 8px;font-size:13px">
+              {{ getHostById(id)?.hostname || getHostById(id)?.ip || id }}
+              <span style="color:var(--text-secondary,#888)">({{ getHostById(id)?.ip || '' }})</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" @click="showBatchDeleteModal=false">取消</button>
+          <button class="btn btn-danger" @click="submitBatchDelete" :disabled="batchDeleting">
+            {{ batchDeleting ? '删除中...' : '确认删除' }}
+          </button>
         </div>
       </div>
     </div>
@@ -588,9 +648,29 @@ const sshManualUser = ref('root')
 const sshManualPass = ref('')
 const pendingTerminalHost = ref(null)
 
-// Batch Add Hosts
-const showBatchHostModal = ref(false)
-const batchHostItems = ref([{ hostname: '', ip: '', project: '', ssh_credential_id: '', cpu: '', memory: '', disk: '' }])
+// Simple Batch Add Hosts (paste IPs)
+const showSimpleBatchModal = ref(false)
+const simpleBatchIPs = ref('')
+const simpleBatchCredId = ref('')
+const simpleBatchProject = ref('')
+const showBatchProgressModal = ref(false)
+const batchProgress = ref(null)
+let batchPollTimer = null
+
+// Batch Delete
+const showBatchDeleteModal = ref(false)
+const selectedHostIds = ref([])
+const batchDeleting = ref(false)
+const allSelected = computed(() => {
+  return hosts.value.length > 0 && selectedHostIds.value.length === filteredHosts.value.length
+})
+function toggleSelectAll() {
+  if (allSelected.value) {
+    selectedHostIds.value = []
+  } else {
+    selectedHostIds.value = filteredHosts.value.map(h => h.id)
+  }
+}
 
 // Add Role
 const showAddRoleModal = ref(false)
@@ -883,25 +963,103 @@ async function toggleMaintenance(host) {
   await loadHosts()
 }
 
-// Batch Add Hosts
-function openBatchHostModal() {
-  batchHostItems.value = [{ hostname: '', ip: '', cpu: '', memory: '', disk: '' }]
-  showBatchHostModal.value = true
+// Simple Batch Add (paste IPs)
+const parsedIPCount = computed(() => {
+  if (!simpleBatchIPs.value) return 0
+  const count = simpleBatchIPs.value
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l)
+    .flatMap(l => l.split(',').map(p => p.trim()).filter(p => p))
+    .length
+  return count
+})
+
+function openSimpleBatchModal() {
+  simpleBatchIPs.value = ''
+  simpleBatchCredId.value = ''
+  simpleBatchProject.value = ''
+  showSimpleBatchModal.value = true
 }
-function addBatchHost() {
-  batchHostItems.value.push({ hostname: '', ip: '', cpu: '', memory: '', disk: '' })
+
+function closeSimpleBatchModal() {
+  showSimpleBatchModal.value = false
 }
-function removeBatchHost(idx) {
-  if (batchHostItems.value.length > 1) batchHostItems.value.splice(idx, 1)
+
+async function submitSimpleBatch() {
+  if (!simpleBatchIPs.value.trim()) return
+  const ips = simpleBatchIPs.value
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l)
+    .flatMap(l => l.split(',').map(p => p.trim()).filter(p => p))
+  if (ips.length === 0) { showToast('请填写 IP 地址', 'error'); return }
+  showSimpleBatchModal.value = false
+  showBatchProgressModal.value = true
+  batchProgress.value = null
+  try {
+    const data = await api('/api/hosts/batch-simple', {
+      method: 'POST',
+      body: JSON.stringify({ ips, ssh_credential_id: simpleBatchCredId.value, project: simpleBatchProject.value })
+    })
+    const batchId = data.batch_id
+    pollBatchStatus(batchId)
+  } catch(e) {
+    showToast('请求失败: ' + e.message, 'error')
+    showBatchProgressModal.value = false
+  }
 }
-async function submitBatchHosts() {
-  const valid = batchHostItems.value.filter(h => h.hostname && h.ip)
-  if (valid.length === 0) { showToast('请填写至少一条有效的主机数据', 'error'); return }
-  const hostList = valid.map(h => ({ hostname: h.hostname, ip: h.ip, project: h.project || '', ssh_credential_id: h.ssh_credential_id || '', cpu: h.cpu || '', memory: h.memory || '', disk: h.disk || '' }))
-  await api('/api/hosts/batch', { method: 'POST', body: JSON.stringify({ hosts: hostList }) })
-  showBatchHostModal.value = false
-  showToast('批量添加 ' + valid.length + ' 台主机完成', 'success')
-  await loadHosts()
+
+async function pollBatchStatus(batchId) {
+  try {
+    const data = await api('/api/hosts/batch/status?batch_id=' + encodeURIComponent(batchId))
+    batchProgress.value = data
+    if (data.done) {
+      await loadHosts()
+      showToast('批量添加完成，共 ' + data.created + ' 台', 'success')
+    } else {
+      batchPollTimer = setTimeout(() => pollBatchStatus(batchId), 1500)
+    }
+  } catch(e) {
+    // 继续轮询
+    batchPollTimer = setTimeout(() => pollBatchStatus(batchId), 2000)
+  }
+}
+
+function closeBatchProgress() {
+  if (batchPollTimer) {
+    clearTimeout(batchPollTimer)
+    batchPollTimer = null
+  }
+  showBatchProgressModal.value = false
+}
+
+// Batch Delete
+function toggleSelectHost(id) {
+  const idx = selectedHostIds.value.indexOf(id)
+  if (idx >= 0) {
+    selectedHostIds.value.splice(idx, 1)
+  } else {
+    selectedHostIds.value.push(id)
+  }
+}
+function getHostById(id) {
+  return hosts.value.find(h => h.id === id)
+}
+async function submitBatchDelete() {
+  if (selectedHostIds.value.length === 0) return
+  batchDeleting.value = true
+  try {
+    await api('/api/hosts/batch-delete', { method: 'POST', body: JSON.stringify({ ids: selectedHostIds.value }) })
+    showToast('已删除 ' + selectedHostIds.value.length + ' 台主机', 'success')
+    showBatchDeleteModal.value = false
+    selectedHostIds.value = []
+    await loadHosts()
+  } catch(e) {
+    showToast('删除失败: ' + e.message, 'error')
+  } finally {
+    batchDeleting.value = false
+  }
 }
 
 // Add/Edit Role
@@ -1134,9 +1292,9 @@ function connectWithCred(credId) {
   disconnectTerminal()
   // 开发环境走 Vite 代理（同端口），生产环境直连后端端口
   const backendPort = import.meta.env.VITE_WS_PORT || '3972'
-  const wsBase = import.meta.env.DEV ? '' : ':' + backendPort
+  const wsBase = import.meta.env.DEV ? location.host : location.hostname + ':' + backendPort
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsUrl = proto + '//' + location.hostname + wsBase + '/api/ssh/ws?host_id=' + encodeURIComponent(terminalHost.value.id) + '&cred_id=' + encodeURIComponent(credId)
+  const wsUrl = proto + '//' + wsBase + '/api/ssh/ws?host_id=' + encodeURIComponent(terminalHost.value.id) + '&cred_id=' + encodeURIComponent(credId)
   try {
     termSocket = new WebSocket(wsUrl)
     termSocket.binaryType = 'arraybuffer'
@@ -1160,9 +1318,9 @@ function connectTerminal() {
   disconnectTerminal()
   // 开发环境走 Vite 代理（同端口），生产环境直连后端端口
   const backendPort = import.meta.env.VITE_WS_PORT || '3972'
-  const wsBase = import.meta.env.DEV ? '' : ':' + backendPort
+  const wsBase = import.meta.env.DEV ? location.host : location.hostname + ':' + backendPort
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsUrl = proto + '//' + location.hostname + wsBase + '/api/ssh/ws?host_id=' + encodeURIComponent(terminalHost.value.id)
+  const wsUrl = proto + '//' + wsBase + '/api/ssh/ws?host_id=' + encodeURIComponent(terminalHost.value.id)
   try {
     termSocket = new WebSocket(wsUrl)
     termSocket.binaryType = 'arraybuffer'

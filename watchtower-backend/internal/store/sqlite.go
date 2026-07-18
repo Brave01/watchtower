@@ -384,6 +384,24 @@ func (s *SQLiteStore) AddHost(h *model.Host) error {
 	return err
 }
 
+func (s *SQLiteStore) GetHostByIP(ip string) (*model.Host, error) {
+	var h model.Host
+	var maint int
+	var lct string
+	err := s.db.QueryRow("SELECT id, ip, hostname, project, cpu, memory, disk, status, maintenance, ssh_credential_id, last_check_time FROM hosts WHERE ip = ?", ip).Scan(&h.ID, &h.IP, &h.Hostname, &h.Project, &h.CPU, &h.Memory, &h.Disk, &h.Status, &maint, &h.SSHCredentialID, &lct)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	h.Maintenance = maint != 0
+	if lct != "" {
+		h.LastCheckTime, _ = time.Parse("2006-01-02 15:04:05", lct)
+	}
+	return &h, nil
+}
+
 func (s *SQLiteStore) UpdateHost(h *model.Host) error {
 	lct := ""
 	if !h.LastCheckTime.IsZero() {
@@ -411,6 +429,23 @@ func (s *SQLiteStore) DeleteHost(id string) error {
 	}
 	_, err = s.db.Exec("DELETE FROM hosts WHERE id = ?", id)
 	return err
+}
+
+func (s *SQLiteStore) DeleteHosts(ids []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, id := range ids {
+		if _, err := tx.Exec("DELETE FROM assignments WHERE host_id = ?", id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec("DELETE FROM hosts WHERE id = ?", id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) ListRoles() ([]model.Role, error) {
