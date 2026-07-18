@@ -103,7 +103,7 @@ func dialSSH(ip string, port int, cred *model.SSHCredential) (*ssh.Client, error
 	addr := net.JoinHostPort(ip, fmt.Sprintf("%d", port))
 	sshConfig := &ssh.ClientConfig{
 		User:            cred.Username,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         collectTimeout,
 	}
 	switch cred.AuthMethod {

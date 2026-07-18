@@ -1,17 +1,27 @@
 package store
 
 import (
+	"crypto/cipher"
 	"database/sql"
 	"fmt"
 	"time"
+
 	"watchtower/internal/model"
+
+	appcrypto "watchtower/internal/crypto"
 
 	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
 )
 
 type SQLiteStore struct {
-	db *sql.DB
+	db   *sql.DB
+	aead cipher.AEAD
+}
+
+// SetAEAD 设置 AES-256-GCM 加密器，用于 SSH 凭据的透明加解密。
+func (s *SQLiteStore) SetAEAD(a cipher.AEAD) {
+	s.aead = a
 }
 
 func NewSQLiteStore(path string) (*SQLiteStore, error) {
@@ -582,6 +592,7 @@ func (s *SQLiteStore) ListSSHCredentials() ([]model.SSHCredential, error) {
 		if err := rows.Scan(&c.ID, &c.Label, &c.Username, &c.AuthMethod, &c.Password, &c.PrivateKey, &c.Port); err != nil {
 			return nil, err
 		}
+		s.decryptCredential(&c)
 		creds = append(creds, c)
 	}
 	return creds, rows.Err()
@@ -596,7 +607,21 @@ func (s *SQLiteStore) GetSSHCredential(id string) (*model.SSHCredential, error) 
 	if err != nil {
 		return nil, err
 	}
+	s.decryptCredential(&c)
 	return &c, nil
+}
+
+// decryptCredential 尝试解密 SSH 凭据中的敏感字段，如果解密失败则保留原值（兼容旧明文数据）。
+func (s *SQLiteStore) decryptCredential(c *model.SSHCredential) {
+	if s.aead == nil {
+		return
+	}
+	if dec, err := appcrypto.Decrypt(s.aead, c.Password); err == nil {
+		c.Password = dec
+	}
+	if dec, err := appcrypto.Decrypt(s.aead, c.PrivateKey); err == nil {
+		c.PrivateKey = dec
+	}
 }
 
 func (s *SQLiteStore) AddSSHCredential(c *model.SSHCredential) (string, error) {
@@ -606,8 +631,18 @@ func (s *SQLiteStore) AddSSHCredential(c *model.SSHCredential) (string, error) {
 	if c.Port == 0 {
 		c.Port = 22
 	}
-	_, err := s.db.Exec("INSERT INTO ssh_credentials (id, label, username, auth_method, password, private_key, port) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		c.ID, c.Label, c.Username, c.AuthMethod, c.Password, c.PrivateKey, c.Port)
+	password := c.Password
+	privateKey := c.PrivateKey
+	if s.aead != nil {
+		if enc, err := appcrypto.Encrypt(s.aead, password); err == nil {
+			password = enc
+		}
+		if enc, err := appcrypto.Encrypt(s.aead, privateKey); err == nil {
+			privateKey = enc
+		}
+	}
+	_, err := s.db.Exec("INSERT OR REPLACE INTO ssh_credentials (id, label, username, auth_method, password, private_key, port) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		c.ID, c.Label, c.Username, c.AuthMethod, password, privateKey, c.Port)
 	return c.ID, err
 }
 

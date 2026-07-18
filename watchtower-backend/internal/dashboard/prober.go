@@ -77,7 +77,7 @@ func ProbeSSH(ip string, port int, timeout int, cred *model.SSHCredential) *mode
 	addr := net.JoinHostPort(ip, fmt.Sprintf("%d", port))
 	sshConfig := &ssh.ClientConfig{
 		User:            cred.Username,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         time.Duration(timeout) * time.Second,
 	}
 	switch cred.AuthMethod {

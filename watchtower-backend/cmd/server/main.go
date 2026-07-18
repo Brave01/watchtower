@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"watchtower/internal/app/v1/logmonitor"
 	"watchtower/internal/app/v1/user"
 	"watchtower/internal/core"
+	appcrypto "watchtower/internal/crypto"
 	dashpkg "watchtower/internal/dashboard"
 	"watchtower/internal/logmonitor/dedup"
 	"watchtower/internal/logmonitor/filter"
@@ -44,6 +46,22 @@ func main() {
 		log.Fatalf("[Main] 数据库初始化失败: %v", err)
 	}
 	defer st.Close()
+
+	// 初始化 SSH 凭据加密
+	if encKey := core.GetEnv("SSH_CRED_KEY", ""); encKey != "" {
+		aead, err := appcrypto.NewAEAD([]byte(encKey))
+		if err != nil {
+			log.Printf("[Main] SSH 凭据加密初始化失败: %v", err)
+		} else {
+			st.SetAEAD(aead)
+			log.Println("[Main] SSH 凭据 AES-256-GCM 加密已启用")
+			migrateSSHCredentials(st)
+		}
+	}
+
+	// 配置 SSH 主机密钥校验
+	dashpkg.SetHostKeyCheck(cfg.SSH.HostKeyCheck)
+	log.Printf("[Main] SSH 主机密钥校验: %v", cfg.SSH.HostKeyCheck)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -88,7 +106,16 @@ func main() {
 	// 中间件
 	exemptPaths := []string{"/login", "/api/auth/*", "/common/*", "/api/health"}
 	mid := middleware.Auth(secret, exemptPaths)
-	corsHandler := middleware.CORS(mid(mux))
+	var allowedOrigins []string
+	if cfg.Server.CORSOrigins != "" {
+		for _, o := range strings.Split(cfg.Server.CORSOrigins, ",") {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				allowedOrigins = append(allowedOrigins, o)
+			}
+		}
+	}
+	corsHandler := middleware.CORS(mid(mux), allowedOrigins...)
 
 	// 启动 HTTP 服务
 	port := cfg.Server.Port
@@ -245,6 +272,27 @@ func initLogMonitor(ctx context.Context, cfg *core.Config, st *store.SQLiteStore
 	}
 
 	return logmonitor.NewLogMonitorHandler(st, wsHub, filterEngine, defaultWebhook, webhookClients, esPipeline)
+}
+
+// migrateSSHCredentials 将数据库中现有明文 SSH 凭据加密存储。
+func migrateSSHCredentials(st *store.SQLiteStore) {
+	creds, err := st.ListSSHCredentials()
+	if err != nil {
+		log.Printf("[Main] 读取 SSH 凭据进行迁移时出错: %v", err)
+		return
+	}
+	migrated := 0
+	for _, c := range creds {
+		// 重新保存将触发加密（AddSSHCredential 内部会检查 aead）
+		if _, err := st.AddSSHCredential(&c); err != nil {
+			log.Printf("[Main] SSH 凭据 %s 迁移失败: %v", c.ID, err)
+		} else {
+			migrated++
+		}
+	}
+	if migrated > 0 {
+		log.Printf("[Main] 已迁移 %d 条 SSH 凭据为加密存储", migrated)
+	}
 }
 
 func registerStaticRoutes(mux *http.ServeMux) {

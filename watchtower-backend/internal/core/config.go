@@ -8,10 +8,16 @@ type Config struct {
 	Dashboard  DashboardConfig  `yaml:"dashboard"`
 	StoreCfg   StoreConfig      `yaml:"store_cfg"`
 	Auth       AuthConfig       `yaml:"auth"`
+	SSH        SSHConfig        `yaml:"ssh"`
+}
+
+type SSHConfig struct {
+	HostKeyCheck bool `yaml:"host_key_check"` // true=校验 SSH 主机密钥，false=跳过校验
 }
 
 type ServerConfig struct {
-	Port int `yaml:"port"`
+	Port        int    `yaml:"port"`
+	CORSOrigins string `yaml:"cors_origins"` // 逗号分隔的白名单 Origin，空=允许所有
 }
 
 type LogMonitorConfig struct {
@@ -48,6 +54,9 @@ func DefaultConfig() *Config {
 		},
 		Auth: AuthConfig{
 			AdminUser: "admin",
+		},
+		SSH: SSHConfig{
+			HostKeyCheck: false,
 		},
 	}
 }

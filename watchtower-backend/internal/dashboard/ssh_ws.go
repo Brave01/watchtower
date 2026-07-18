@@ -168,7 +168,7 @@ func startSSHSession(ip string, port int, auth *sshAuthInfo) (*sshSession, error
 	config := &ssh.ClientConfig{
 		User:            auth.Username,
 		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         10 * time.Second,
 	}
 
