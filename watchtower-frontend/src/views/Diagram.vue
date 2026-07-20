@@ -24,11 +24,19 @@
 
     <!-- Palette: Server nodes from API -->
     <div class="diagram-palette">
-      <span class="palette-label">服务器节点:</span>
-      <span v-for="svr in serverNodes" :key="svr.id" class="palette-item palette-server" draggable="true" @dragstart="onDragServerStart($event, svr)">
-        {{ svr.data.label }}
-      </span>
-      <span v-if="serverNodes.length===0" style="color:#94a3b8;font-size:12px">暂无服务器</span>
+      <div class="palette-header" @click="serverPaletteOpen = !serverPaletteOpen">
+        <span class="palette-label">服务器节点 ({{ serverNodes.length }})</span>
+        <span class="palette-toggle">{{ serverPaletteOpen ? '收起' : '展开' }}</span>
+      </div>
+      <div v-show="serverPaletteOpen" class="palette-body">
+        <input v-if="serverNodes.length > 6" v-model="serverPaletteSearch" class="palette-search" placeholder="搜索服务器..." />
+        <div class="palette-items">
+          <span v-for="svr in filteredServerNodes" :key="svr.id" class="palette-item palette-server" draggable="true" @dragstart="onDragServerStart($event, svr)">
+            {{ svr.data.label }}
+          </span>
+          <span v-if="filteredServerNodes.length===0" style="color:#94a3b8;font-size:12px;padding:4px 0">无匹配服务器</span>
+        </div>
+      </div>
     </div>
     <!-- Palette: Custom templates -->
     <div class="diagram-palette" style="margin-top:4px">
@@ -158,6 +166,15 @@ const nodes = ref([])
 const edges = ref([])
 const mode = ref(localStorage.getItem('scm-diagram-mode') || 'select')
 const showExportDialog = ref(false)
+
+// Palette state
+const serverPaletteOpen = ref(true)
+const serverPaletteSearch = ref('')
+const filteredServerNodes = computed(() => {
+  const q = serverPaletteSearch.value.trim().toLowerCase()
+  if (!q) return serverNodes.value
+  return serverNodes.value.filter(s => s.data.label.toLowerCase().includes(q))
+})
 const { fitView, screenToFlowCoordinate } = useVueFlow({ id: 'default' })
 
 const connectionMode = computed(() => {
@@ -741,6 +758,24 @@ onUnmounted(() => {
   border-radius: 8px; font-size: 13px;
 }
 .palette-label { color: var(--text-secondary, #64748b); font-weight: 500; white-space: nowrap; }
+.palette-header {
+  display: flex; align-items: center; justify-content: space-between; cursor: pointer;
+  user-select: none;
+}
+.palette-toggle {
+  font-size: 12px; color: var(--accent, #3b82f6); font-weight: 500; white-space: nowrap;
+}
+.palette-body { margin-top: 6px; }
+.palette-search {
+  width: 100%; box-sizing: border-box; padding: 4px 8px; margin-bottom: 6px;
+  border: 1px solid var(--border-color, #e2e8f0); border-radius: 6px;
+  font-size: 12px; outline: none; background: var(--card-bg, #fff);
+  color: var(--text-primary, #1e293b);
+}
+.palette-search:focus { border-color: var(--accent, #3b82f6); }
+.palette-items {
+  display: flex; flex-wrap: wrap; gap: 6px; max-height: 160px; overflow-y: auto;
+}
 .palette-item, .palette-server {
   cursor: grab; padding: 4px 12px; border-radius: 6px;
   background: var(--bg-secondary, #f1f5f9); color: var(--text-primary, #1e293b);
