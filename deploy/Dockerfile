@@ -1,6 +1,8 @@
 # ===== 构建阶段：前端 =====
 FROM node:18-alpine AS frontend-builder
 ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
+# ws 端口，默认 为空，开发环境走 Vite 代理口，生产环境配置为前端暴露端口
+ENV VITE_WS_PORT=3972
 WORKDIR /build
 COPY watchtower-frontend/ ./watchtower-frontend
 RUN cd watchtower-frontend && npm install && npm run build
@@ -12,7 +14,7 @@ WORKDIR /build
 COPY watchtower-backend/go.mod watchtower-backend/go.sum ./
 RUN go mod download
 COPY watchtower-backend/ .
-RUN go build -ldflags="-s -w" -o watchtower .
+RUN go build -ldflags="-s -w" -o watchtower ./cmd/server
 
 # ===== 运行阶段：前端 Nginx =====
 FROM nginx:alpine AS frontend-server

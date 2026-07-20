@@ -14,8 +14,7 @@
 
 ### 1.1 前置条件
 
-- Go 1.21+
-- Node.js 18+（仅构建前端时需要）
+- Go 1.25+
 - 目标系统：Linux（推荐）或 macOS
 
 ### 1.2 编译构建
@@ -23,19 +22,13 @@
 ```bash
 # 克隆代码
 git clone <repo>
-cd watchtower
-
-# 构建前端（如无需修改前端代码可跳过）
-cd frontend
-npm install
-npm run build
-cd ..
+cd watchtower-backend
 
 # 编译 Go 二进制
-go build -ldflags="-s -w" -o watchtower .
+go build -ldflags="-s -w" -o watchtower ./cmd/server/
 
 # 交叉编译（部署到 Linux 服务器）
-GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o watchtower-linux .
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o watchtower-linux ./cmd/server/
 ```
 
 ### 1.3 部署运行
@@ -86,7 +79,9 @@ curl http://localhost:3972/api/health
 # 预期响应: {"status":"ok"}
 ```
 
-浏览器访问 `http://<服务器IP>:3972`，默认账号密码 `admin` / `admin`。
+浏览器访问 `http://<服务器IP>:3972/login`，默认账号密码 `admin` / `admin`。
+
+> **注**：删除前端 SPA 后，登录页由后端直接提供。不再需要额外的前端构建步骤。
 
 ---
 
@@ -94,60 +89,10 @@ curl http://localhost:3972/api/health
 
 ### 2.1 项目目录中已包含的文件
 
-- `Dockerfile` — 多阶段构建镜像
+- `Dockerfile` — 单阶段构建镜像（纯 Go 后端）
 - `docker-compose.yml` — 一键启动服务
 
-### 2.2 Dockerfile
-
-```dockerfile
-# ===== 构建阶段：前端 =====
-FROM node:18-alpine AS frontend-builder
-WORKDIR /build/frontend
-COPY frontend/ ./
-RUN npm install && npm run build
-# Vite outDir: ../internal/webui/static/dist → 产物在 /build/internal/webui/static/dist
-
-# ===== 构建阶段：后端 =====
-FROM golang:1.21-alpine AS backend-builder
-WORKDIR /build
-COPY . .
-COPY --from=frontend-builder /build/internal/webui/static/dist ./internal/webui/static/dist
-RUN go build -ldflags="-s -w" -o watchtower .
-
-# ===== 运行阶段 =====
-FROM alpine:3.19
-RUN apk add --no-cache ca-certificates iputils
-WORKDIR /app
-COPY --from=backend-builder /build/watchtower .
-COPY --from=backend-builder /build/configs ./configs
-EXPOSE 3972
-VOLUME ["/app/data"]
-CMD ["./watchtower"]
-```
-
-### 2.3 docker-compose.yml
-
-```yaml
-version: '3.8'
-
-services:
-  watchtower:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-    container_name: watchtower
-    restart: always
-    ports:
-      - "3972:3972"
-    volumes:
-      - ./data:/app/data
-      - ./configs/.env:/app/configs/.env
-      - ./configs/config.yaml:/app/configs/config.yaml
-    environment:
-      - TZ=Asia/Shanghai
-```
-
-### 2.4 构建和启动
+### 2.2 构建和启动
 
 ```bash
 # 构建镜像
@@ -165,7 +110,9 @@ docker-compose down
 # 数据持久化在 ./data/ 目录
 ```
 
-### 2.5 自定义配置
+> **说明**：由于删除了独立前端，docker-compose 只包含一个 backend 服务，直接暴露端口 `3972`。不再需要 Nginx 和 frontend 容器。
+
+### 2.3 自定义配置
 
 编辑 `configs/config.yaml` 和 `configs/.env` 后重新启动：
 
@@ -213,23 +160,6 @@ data:
     server:
       port: 3972
     log_monitor:
-      elasticsearch:
-        address: "http://your-es-server:9200"
-        username: "elastic"
-        index: "k8s-logs-*"
-        interval: 10
-        query:
-          size: 100
-          sort:
-            - "@timestamp":
-                order: desc
-          query:
-            bool:
-              filter:
-                - range:
-                    "@timestamp":
-                      gte: "now-{interval}s"
-                      lte: "now"
       feishu_webhook:
         url: ""
         max_retries: 3
@@ -313,6 +243,9 @@ spec:
         env:
         - name: TZ
           value: Asia/Shanghai
+        securityContext:
+          capabilities:
+            add: ["NET_RAW", "NET_ADMIN"]
         resources:
           requests:
             cpu: "100m"
@@ -329,7 +262,7 @@ spec:
           name: watchtower-secret
       - name: data
         persistentVolumeClaim:
-          claimName: watchtower-data
+          name: watchtower-data
 ```
 
 #### 3.2.6 Service
@@ -414,23 +347,6 @@ server:
   port: 3972                           # 服务监听端口
 
 log_monitor:
-  elasticsearch:
-    address: ""                        # ES 地址（Web UI 中可覆盖）
-    username: ""                       # ES 用户名
-    index: ""                          # ES 索引
-    interval: 10                       # 轮询间隔（秒）
-    size: 100                          # 每次查询最大日志数
-    query:
-      sort:
-        - "@timestamp":
-            order: desc
-      query:
-        bool:
-          filter:
-            - range:
-                "@timestamp":
-                  gte: "now-{interval}s"
-                  lte: "now"
   feishu_webhook:
     url: ""                            # 默认飞书 Webhook URL
     max_retries: 3                     # 最大重试次数
@@ -509,21 +425,10 @@ chown -R <user>:<group> /opt/watchtower/data/
 chmod 755 /opt/watchtower/data/
 ```
 
-### 5.4 修改前端后需要重新构建
-
-```bash
-cd frontend
-npm run build
-cd ..
-go build -o watchtower .
-```
-
-前端构建产物通过 `//go:embed` 嵌入 Go 二进制中，修改前端后必须重新编译 Go 程序才能生效。
-
-### 5.5 K8s 存储注意事项
+### 5.4 K8s 存储注意事项
 
 - `ReadWriteOnce` 的 PVC 不支持跨节点挂载同一副本
 - 如需多副本部署，建议使用 NFS、CephFS 等支持 `ReadWriteMany` 的存储
 - 或考虑将 SQLite 迁移到外部数据库（当前版本暂不支持）
 
-### 5.6 首次登录后请修改默认密码
+### 5.5 首次登录后请修改默认密码

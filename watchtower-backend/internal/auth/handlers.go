@@ -2,8 +2,11 @@ package auth
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 	"sync"
+	"time"
 
 	"watchtower/internal/store"
 
@@ -20,6 +23,84 @@ type changePasswordRequest struct {
 	NewPassword string `json:"new_password"`
 }
 
+// ---------- IP 登录频率限制 ----------
+
+type ipAttempt struct {
+	count       int
+	first       time.Time
+	lockedUntil time.Time
+}
+
+type loginLimiter struct {
+	mu       sync.Mutex
+	attempts map[string]*ipAttempt
+}
+
+var limiter = &loginLimiter{
+	attempts: make(map[string]*ipAttempt),
+}
+
+const (
+	maxLoginAttempts = 5
+	loginWindow      = 5 * time.Minute
+	loginLockout     = 5 * time.Minute
+)
+
+func (l *loginLimiter) check(ip string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := time.Now()
+	a, exists := l.attempts[ip]
+
+	// 已锁定
+	if exists && now.Before(a.lockedUntil) {
+		remaining := a.lockedUntil.Sub(now).Round(time.Second)
+		return fmt.Errorf("登录尝试过于频繁，请在 %v 后再试", remaining)
+	}
+
+	// 窗口过期，重置
+	if exists && now.Sub(a.first) > loginWindow {
+		delete(l.attempts, ip)
+		exists = false
+	}
+
+	if !exists {
+		l.attempts[ip] = &ipAttempt{count: 1, first: now}
+	} else {
+		a.count++
+		if a.count >= maxLoginAttempts {
+			a.lockedUntil = now.Add(loginLockout)
+			return fmt.Errorf("登录失败次数过多，已锁定 %v", loginLockout)
+		}
+	}
+
+	return nil
+}
+
+func (l *loginLimiter) reset(ip string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.attempts, ip)
+}
+
+func getRealIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+	idx := strings.LastIndex(r.RemoteAddr, ":")
+	if idx >= 0 {
+		return r.RemoteAddr[:idx]
+	}
+	return r.RemoteAddr
+}
+
+// -------------------------------------
+
 // LoginHandler 从数据库读取用户密码 hash 校验登录。
 func LoginHandler(secret []byte, adminUser string, s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -27,6 +108,14 @@ func LoginHandler(secret []byte, adminUser string, s store.Store) http.HandlerFu
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+
+		// IP 频率限制
+		ip := getRealIP(r)
+		if err := limiter.check(ip); err != nil {
+			writeJSONError(w, http.StatusTooManyRequests, err.Error())
+			return
+		}
+
 		var req loginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid request body")
@@ -48,6 +137,9 @@ func LoginHandler(secret []byte, adminUser string, s store.Store) http.HandlerFu
 			writeJSONError(w, http.StatusUnauthorized, "invalid username or password")
 			return
 		}
+
+		// 登录成功，清空该 IP 的失败记录
+		limiter.reset(ip)
 
 		token, err := Sign(secret, req.Username, SessionTTL)
 		if err != nil {

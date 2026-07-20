@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"watchtower/internal/model"
 	"watchtower/internal/store"
 
 	"golang.org/x/crypto/ssh"
@@ -95,14 +96,14 @@ func parseSize(s string) (int, error) {
 }
 
 // dialSSH 建立 SSH 连接并返回 client
-func dialSSH(ip string, port int, cred *store.SSHCredential) (*ssh.Client, error) {
+func dialSSH(ip string, port int, cred *model.SSHCredential) (*ssh.Client, error) {
 	if cred == nil || cred.Username == "" {
 		return nil, fmt.Errorf("未配置 SSH 凭据")
 	}
 	addr := net.JoinHostPort(ip, fmt.Sprintf("%d", port))
 	sshConfig := &ssh.ClientConfig{
 		User:            cred.Username,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         collectTimeout,
 	}
 	switch cred.AuthMethod {
@@ -120,22 +121,37 @@ func dialSSH(ip string, port int, cred *store.SSHCredential) (*ssh.Client, error
 	return ssh.Dial("tcp", addr, sshConfig)
 }
 
-// runSSHCommand 在 SSH 连接上执行单条命令，返回输出
+// runSSHCommand 在 SSH 连接上执行单条命令，返回 stdout 输出（不含 stderr）
 func runSSHCommand(client *ssh.Client, cmd string) (string, error) {
 	session, err := client.NewSession()
 	if err != nil {
 		return "", fmt.Errorf("创建会话失败: %w", err)
 	}
 	defer session.Close()
-	output, err := session.CombinedOutput(cmd)
+	output, err := session.Output(cmd)
 	if err != nil {
 		return "", fmt.Errorf("命令执行失败: %w, output: %s", err, strings.TrimSpace(string(output)))
 	}
 	return strings.TrimSpace(string(output)), nil
 }
 
+// runSSHCommandWithSudo 执行命令，失败时自动用 sudo 重试
+func runSSHCommandWithSudo(client *ssh.Client, cmd string) (string, error) {
+	out, err := runSSHCommand(client, cmd)
+	if err == nil {
+		return out, nil
+	}
+	// 失败时尝试 sudo
+	out, sudoErr := runSSHCommand(client, "sudo "+cmd)
+	if sudoErr == nil {
+		return out, nil
+	}
+	// 返回原始错误
+	return "", err
+}
+
 // collectHost 对单台主机执行 SSH 采集，返回采集结果
-func collectHost(host *store.Host, cred *store.SSHCredential) *CollectResult {
+func collectHost(host *model.Host, cred *model.SSHCredential) *CollectResult {
 	result := &CollectResult{
 		HostID:  host.ID,
 		Success: false,
@@ -160,14 +176,14 @@ func collectHost(host *store.Host, cred *store.SSHCredential) *CollectResult {
 	defer client.Close()
 
 	// 1. 采集主机名
-	hostname, err := runSSHCommand(client, "hostname -s")
+	hostname, err := runSSHCommandWithSudo(client, "hostname -s 2>/dev/null")
 	if err != nil {
 		log.Printf("[Collect] %s hostname 采集失败: %v", host.IP, err)
 		hostname = ""
 	}
 
 	// 2. 采集 CPU 核数
-	cpuStr, err := runSSHCommand(client, "nproc")
+	cpuStr, err := runSSHCommandWithSudo(client, "nproc 2>/dev/null")
 	cpu := ""
 	if err == nil {
 		cpu = strings.TrimSpace(cpuStr)
@@ -176,7 +192,7 @@ func collectHost(host *store.Host, cred *store.SSHCredential) *CollectResult {
 	}
 
 	// 3. 采集内存 (GB)
-	memOut, err := runSSHCommand(client, "free -g | awk 'NR==2{print $2}'")
+	memOut, err := runSSHCommandWithSudo(client, "free -g 2>/dev/null | awk 'NR==2{print $2}'")
 	mem := ""
 	if err == nil {
 		memStr := strings.TrimSpace(memOut)
@@ -190,7 +206,7 @@ func collectHost(host *store.Host, cred *store.SSHCredential) *CollectResult {
 	}
 
 	// 4. 采集磁盘分区
-	diskOut, err := runSSHCommand(client, "df -h --output=target,size | tail -n +2")
+	diskOut, err := runSSHCommandWithSudo(client, "df -h --output=target,size 2>/dev/null | tail -n +2")
 	disk := ""
 	if err == nil {
 		var parts []string
@@ -235,8 +251,13 @@ func collectHost(host *store.Host, cred *store.SSHCredential) *CollectResult {
 	return result
 }
 
+// CollectOne 对单台主机执行 SSH 采集（导出版本）
+func CollectOne(host *model.Host, cred *model.SSHCredential) *CollectResult {
+	return collectHost(host, cred)
+}
+
 // CollectHosts 采集指定主机列表，支持并发限制
-func CollectHosts(hosts []store.Host, st store.Store) []*CollectResult {
+func CollectHosts(hosts []model.Host, st store.Store) []*CollectResult {
 	limiter := make(chan struct{}, maxConcurrent)
 	var mu sync.Mutex
 	var results []*CollectResult
@@ -245,12 +266,12 @@ func CollectHosts(hosts []store.Host, st store.Store) []*CollectResult {
 	for i := range hosts {
 		wg.Add(1)
 		limiter <- struct{}{}
-		go func(h *store.Host) {
+		go func(h *model.Host) {
 			defer wg.Done()
 			defer func() { <-limiter }()
 
 			// 优先使用主机绑定的凭据，其次取第一个凭据
-			var sshCred *store.SSHCredential
+			var sshCred *model.SSHCredential
 			if h.SSHCredentialID != "" {
 				cred, _ := st.GetSSHCredential(h.SSHCredentialID)
 				if cred != nil {

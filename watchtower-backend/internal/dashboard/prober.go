@@ -9,22 +9,22 @@ import (
 	"strings"
 	"time"
 
-	"watchtower/internal/store"
+	"watchtower/internal/model"
 
 	"golang.org/x/crypto/ssh"
 )
 
-func ProbeTCP(ip string, port int, timeout int) *store.ProbeResult {
+func ProbeTCP(ip string, port int, timeout int) *model.ProbeResult {
 	addr := net.JoinHostPort(ip, fmt.Sprintf("%d", port))
 	conn, err := net.DialTimeout("tcp", addr, time.Duration(timeout)*time.Second)
 	if err != nil {
-		return &store.ProbeResult{Status: store.HostStatusDown, Error: err.Error()}
+		return &model.ProbeResult{Status: model.HostStatusDown, Error: err.Error()}
 	}
 	conn.Close()
-	return &store.ProbeResult{Status: store.HostStatusUp}
+	return &model.ProbeResult{Status: model.HostStatusUp}
 }
 
-func ProbeHTTP(ip string, port int, path string, timeout int) *store.ProbeResult {
+func ProbeHTTP(ip string, port int, path string, timeout int) *model.ProbeResult {
 	url := fmt.Sprintf("http://%s%s", net.JoinHostPort(ip, fmt.Sprintf("%d", port)), path)
 	client := &http.Client{
 		Timeout: time.Duration(timeout) * time.Second,
@@ -34,14 +34,14 @@ func ProbeHTTP(ip string, port int, path string, timeout int) *store.ProbeResult
 	}
 	resp, err := client.Get(url)
 	if err != nil {
-		return &store.ProbeResult{Status: store.HostStatusDown, Error: err.Error()}
+		return &model.ProbeResult{Status: model.HostStatusDown, Error: err.Error()}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
-		return &store.ProbeResult{Status: store.HostStatusUp, StatusCode: resp.StatusCode}
+		return &model.ProbeResult{Status: model.HostStatusUp, StatusCode: resp.StatusCode}
 	}
-	return &store.ProbeResult{
-		Status: store.HostStatusDown, StatusCode: resp.StatusCode,
+	return &model.ProbeResult{
+		Status: model.HostStatusDown, StatusCode: resp.StatusCode,
 		Error: fmt.Sprintf("HTTP %d", resp.StatusCode),
 	}
 }
@@ -56,7 +56,7 @@ func findPing() string {
 	return "ping"
 }
 
-func ProbeICMP(ip string, timeout int) *store.ProbeResult {
+func ProbeICMP(ip string, timeout int) *model.ProbeResult {
 	pingPath := findPing()
 	cmd := exec.Command(pingPath, "-c", "3", "-W", fmt.Sprintf("%d", timeout), ip)
 	output, err := cmd.CombinedOutput()
@@ -65,19 +65,19 @@ func ProbeICMP(ip string, timeout int) *store.ProbeResult {
 		if errMsg == "" {
 			errMsg = err.Error()
 		}
-		return &store.ProbeResult{Status: store.HostStatusDown, Error: errMsg}
+		return &model.ProbeResult{Status: model.HostStatusDown, Error: errMsg}
 	}
-	return &store.ProbeResult{Status: store.HostStatusUp}
+	return &model.ProbeResult{Status: model.HostStatusUp}
 }
 
-func ProbeSSH(ip string, port int, timeout int, cred *store.SSHCredential) *store.ProbeResult {
+func ProbeSSH(ip string, port int, timeout int, cred *model.SSHCredential) *model.ProbeResult {
 	if cred == nil || cred.Username == "" {
-		return &store.ProbeResult{Status: store.HostStatusDown, Error: "未配置 SSH 凭据"}
+		return &model.ProbeResult{Status: model.HostStatusDown, Error: "未配置 SSH 凭据"}
 	}
 	addr := net.JoinHostPort(ip, fmt.Sprintf("%d", port))
 	sshConfig := &ssh.ClientConfig{
 		User:            cred.Username,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         time.Duration(timeout) * time.Second,
 	}
 	switch cred.AuthMethod {
@@ -89,39 +89,39 @@ func ProbeSSH(ip string, port int, timeout int, cred *store.SSHCredential) *stor
 		if strings.Contains(cred.PrivateKey, "-----") {
 			signer, err = ssh.ParsePrivateKey([]byte(cred.PrivateKey))
 		} else {
-			return &store.ProbeResult{Status: store.HostStatusDown, Error: "SSH 密钥格式无效"}
+			return &model.ProbeResult{Status: model.HostStatusDown, Error: "SSH 密钥格式无效"}
 		}
 		if err != nil {
-			return &store.ProbeResult{Status: store.HostStatusDown, Error: "解析 SSH 密钥失败: " + err.Error()}
+			return &model.ProbeResult{Status: model.HostStatusDown, Error: "解析 SSH 密钥失败: " + err.Error()}
 		}
 		sshConfig.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
 	default:
-		return &store.ProbeResult{Status: store.HostStatusDown, Error: "不支持的认证方式: " + cred.AuthMethod}
+		return &model.ProbeResult{Status: model.HostStatusDown, Error: "不支持的认证方式: " + cred.AuthMethod}
 	}
 
 	client, err := ssh.Dial("tcp", addr, sshConfig)
 	if err != nil {
-		return &store.ProbeResult{Status: store.HostStatusDown, Error: "SSH 连接失败: " + err.Error()}
+		return &model.ProbeResult{Status: model.HostStatusDown, Error: "SSH 连接失败: " + err.Error()}
 	}
 	defer client.Close()
 
 	session, err := client.NewSession()
 	if err != nil {
-		return &store.ProbeResult{Status: store.HostStatusDown, Error: "SSH 会话创建失败: " + err.Error()}
+		return &model.ProbeResult{Status: model.HostStatusDown, Error: "SSH 会话创建失败: " + err.Error()}
 	}
 	defer session.Close()
 	output, err := session.CombinedOutput("whoami")
 	if err != nil {
-		return &store.ProbeResult{Status: store.HostStatusDown, Error: "SSH 命令执行失败: " + err.Error()}
+		return &model.ProbeResult{Status: model.HostStatusDown, Error: "SSH 命令执行失败: " + err.Error()}
 	}
-	return &store.ProbeResult{
-		Status:     store.HostStatusUp,
+	return &model.ProbeResult{
+		Status:     model.HostStatusUp,
 		StatusCode: 0,
 		Error:      strings.TrimSpace(string(output)),
 	}
 }
 
-func ResolveProbeParams(role *store.Role, assignment *store.Assignment) (port int, path string) {
+func ResolveProbeParams(role *model.Role, assignment *model.Assignment) (port int, path string) {
 	port = role.Port
 	path = role.Path
 	if assignment.OverridePort != nil {
@@ -133,18 +133,18 @@ func ResolveProbeParams(role *store.Role, assignment *store.Assignment) (port in
 	return
 }
 
-func Probe(hostIP string, role *store.Role, assignment *store.Assignment, sshCred *store.SSHCredential) *store.ProbeResult {
+func Probe(hostIP string, role *model.Role, assignment *model.Assignment, sshCred *model.SSHCredential) *model.ProbeResult {
 	port, path := ResolveProbeParams(role, assignment)
 	switch role.Type {
-	case store.ProbeTypeICMP:
+	case model.ProbeTypeICMP:
 		return ProbeICMP(hostIP, role.Timeout)
-	case store.ProbeTypeTCP:
+	case model.ProbeTypeTCP:
 		return ProbeTCP(hostIP, port, role.Timeout)
-	case store.ProbeTypeHTTP:
+	case model.ProbeTypeHTTP:
 		return ProbeHTTP(hostIP, port, path, role.Timeout)
-	case store.ProbeTypeSSH:
+	case model.ProbeTypeSSH:
 		return ProbeSSH(hostIP, port, role.Timeout, sshCred)
 	default:
-		return &store.ProbeResult{Status: store.HostStatusDown, Error: "unknown type: " + role.Type}
+		return &model.ProbeResult{Status: model.HostStatusDown, Error: "unknown type: " + role.Type}
 	}
 }

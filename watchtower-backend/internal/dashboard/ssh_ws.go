@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net"
@@ -8,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"watchtower/internal/model"
 	"watchtower/internal/store"
 
 	"github.com/gorilla/websocket"
@@ -166,7 +168,7 @@ func startSSHSession(ip string, port int, auth *sshAuthInfo) (*sshSession, error
 	config := &ssh.ClientConfig{
 		User:            auth.Username,
 		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         10 * time.Second,
 	}
 
@@ -204,27 +206,42 @@ func pipeWebSocketToSSH(conn *websocket.Conn, s *sshSession) {
 		return
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	done := make(chan struct{})
 
 	go func() {
+		defer close(done)
 		buf := make([]byte, 4096)
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			n, err := stdout.Read(buf)
 			if n > 0 {
 				conn.WriteMessage(websocket.BinaryMessage, buf[:n])
 			}
 			if err != nil {
-				break
+				return
 			}
 		}
-		close(done)
 	}()
 
 	go func() {
+		defer stdin.Close()
+		defer func() {
+			cancel()
+			s.session.Close()
+			s.client.Close()
+		}()
 		for {
 			_, message, err := conn.ReadMessage()
 			if err != nil {
-				break
+				log.Printf("[SSH-WS] WebSocket 已关闭，SSH 会话已释放")
+				return
 			}
 			var resize struct {
 				Type string `json:"type"`
@@ -237,7 +254,6 @@ func pipeWebSocketToSSH(conn *websocket.Conn, s *sshSession) {
 			}
 			stdin.Write(message)
 		}
-		stdin.Close()
 	}()
 
 	s.session.Wait()
@@ -258,7 +274,7 @@ func resolveSSHPort(st store.Store, hostID string) int {
 		if err != nil || role == nil {
 			continue
 		}
-		if role.Type == store.ProbeTypeSSH {
+		if role.Type == model.ProbeTypeSSH {
 			if a.OverridePort != nil {
 				port = *a.OverridePort
 			} else {

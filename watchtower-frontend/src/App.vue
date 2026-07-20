@@ -32,10 +32,10 @@
     </main>
 
     <!-- Change Password Modal -->
-    <div v-if="showChangePwd" class="modal-overlay" @click.self="showChangePwd = false">
+    <div v-if="showChangePwd" class="modal-overlay">
       <div class="modal" style="max-width:400px">
         <div class="modal-header">
-          <h3 class="modal-title">修改密码</h3>
+          <span class="modal-title">修改密码</span>
           <button class="modal-close" @click="showChangePwd = false">&times;</button>
         </div>
         <div class="modal-body">

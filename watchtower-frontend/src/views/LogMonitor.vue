@@ -164,7 +164,7 @@
     </div>
 
     <!-- Add/Edit Rule Modal -->
-    <div v-if="showRuleModal" class="modal-overlay" @click.self="showRuleModal=false">
+    <div v-if="showRuleModal" class="modal-overlay">
       <div class="modal" @click.stop>
         <div class="modal-header">
           <span class="modal-title">{{ editingRule ? '编辑规则' : '添加规则' }}</span>
@@ -213,7 +213,7 @@
     </div>
 
     <!-- Webhook Config Modal -->
-    <div v-if="showWebhookModal" class="modal-overlay" @click.self="showWebhookModal=false">
+    <div v-if="showWebhookModal" class="modal-overlay">
       <div class="modal" @click.stop style="max-width:680px">
         <div class="modal-header">
           <span class="modal-title">Webhook 配置</span>
@@ -314,7 +314,7 @@
     </div>
 
     <!-- ES Config Modal -->
-    <div v-if="showESModal" class="modal-overlay" @click.self="showESModal=false">
+    <div v-if="showESModal" class="modal-overlay">
       <div class="modal" @click.stop style="max-width:480px">
         <div class="modal-header">
           <span class="modal-title">ES 日志服务配置</span>
@@ -726,7 +726,7 @@ async function testWebhookTemplate() {
 
 async function testWebhook() {
   try {
-    const resp = await api('/api/webhook/test', { method: 'POST' })
+    const resp = await api('/api/webhook/test', { method: 'POST', body: JSON.stringify({ url: whForm.value.url, platform: whForm.value.platform, secret: whForm.value.secret }) })
     showToast(resp.message || '测试消息已发送', resp.success !== false ? 'success' : 'error')
   } catch(e) {
     showToast('测试失败: ' + e.message, 'error')
